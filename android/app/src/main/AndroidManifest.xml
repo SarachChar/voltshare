@@ -1,8 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required to load map tiles / Google Maps over the network. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Required to read the device's current location for the recenter button. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="voltshare_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Google Maps API key (Maps SDK for Android).
+             Replace the value below with your own key from Google Cloud Console. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyCtRIZR2y-Di8YQswwaPLYdHcUXgcqFGKM"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

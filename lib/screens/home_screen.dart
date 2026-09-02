@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:voltshare_app/models/profile_provider.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:voltshare_app/controllers/charger_controller.dart';
+import 'package:voltshare_app/models/charger_model.dart';
+import 'package:voltshare_app/screens/blank_screen.dart';
+import 'package:voltshare_app/screens/profile_screen.dart';
+import 'package:voltshare_app/services/charger_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,79 +16,513 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   static const Color _primary = Color(0xFF10B981);
-  bool _isLoggingOut = false;
+  static const Color _dark = Color(0xFF1F2937);
+  static const LatLng _initialCenter = LatLng(13.7460, 100.5340);
 
-  Future<void> _logout() async {
-    setState(() => _isLoggingOut = true);
+  static const double _initialSheetSize = 0.30;
+
+  final ChargerController _controller =
+      ChargerController(ChargerSupabaseService());
+  GoogleMapController? _mapController;
+  final DraggableScrollableController _sheetController =
+      DraggableScrollableController();
+
+  List<Charger> _chargers = List.empty();
+  bool _isLoadingChargers = false;
+  bool _isLocating = false;
+  bool _locationGranted = false;
+  int _navIndex = 0;
+
+  /// Current sheet size as a fraction of screen height (0..1). Drives the
+  /// position of the Google logo (via map padding) and the recenter button.
+  double _sheetSize = _initialSheetSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheetController.addListener(_onSheetMoved);
+    _controller.onSync.listen((bool syncState) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingChargers = syncState;
+      });
+    });
+    _loadChargers();
+    // Request location and move to the user's position on first open.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _recenter());
+  }
+
+  void _onSheetMoved() {
+    if (!mounted || !_sheetController.isAttached) return;
+    setState(() {
+      _sheetSize = _sheetController.size;
+    });
+  }
+
+  Future<void> _loadChargers() async {
     try {
-      await Supabase.instance.client.auth.signOut();
-      if (mounted) {
-        context.read<ProfileProvider>().reset();
-      }
+      final chargers = await _controller.fetchNearbyChargers();
+      if (!mounted) return;
+      setState(() {
+        _chargers = chargers;
+      });
+      _fitMapToChargers();
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Failed to log out. Please try again.'),
-            backgroundColor: Colors.red.shade600,
-          ),
-        );
-        setState(() => _isLoggingOut = false);
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not load chargers. Please try again.'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
     }
+  }
+
+  void _fitMapToChargers() {
+    if (_mapController == null || _chargers.isEmpty) return;
+    // Center on the first charger for now.
+    final first = _chargers.first;
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngZoom(
+        LatLng(first.latitude, first.longitude),
+        13,
+      ),
+    );
+  }
+
+  Future<void> _recenter() async {
+    if (_isLocating) return;
+    setState(() => _isLocating = true);
+    try {
+      final position = await _determinePosition();
+      if (!mounted || position == null) return;
+      await _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(position.latitude, position.longitude),
+          15,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
+    }
+  }
+
+  /// Requests location permission (if needed) and returns the current
+  /// position, or null if unavailable. Shows a message on failure.
+  Future<Position?> _determinePosition() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showLocationMessage('Location services are turned off.');
+      return null;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied) {
+      _showLocationMessage('Location permission denied.');
+      return null;
+    }
+    if (permission == LocationPermission.deniedForever) {
+      _showLocationMessage(
+        'Location permission permanently denied. Enable it in Settings.',
+      );
+      return null;
+    }
+
+    // Permission granted: enable the blue "my location" dot on the map.
+    if (!_locationGranted && mounted) {
+      setState(() => _locationGranted = true);
+    }
+
+    try {
+      return await Geolocator.getCurrentPosition();
+    } catch (_) {
+      _showLocationMessage('Could not get your current location.');
+      return null;
+    }
+  }
+
+  void _showLocationMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade600,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _sheetController.removeListener(_onSheetMoved);
+    _sheetController.dispose();
+    _mapController?.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final name = context.watch<ProfileProvider>().name;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
-      appBar: AppBar(
-        backgroundColor: _primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text(
-          'VoltShare',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-        actions: [
-          IconButton(
-            onPressed: _isLoggingOut ? null : _logout,
-            tooltip: 'Log Out',
-            icon: _isLoggingOut
-                ? Container(
-                    width: 20,
-                    height: 20,
-                    child: const CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.logout),
-          ),
+      body: IndexedStack(
+        index: _navIndex,
+        children: [
+          _buildMapTab(),
+          const BlankPage(title: 'Search'),
+          const BlankPage(title: 'Bookings'),
+          const ProfileScreen(),
         ],
       ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.bolt, color: _primary, size: 72),
-              const Padding(padding: EdgeInsets.only(top: 16)),
-              const Text(
-                'Welcome back!',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+      bottomNavigationBar: _buildBottomNav(),
+    );
+  }
+
+  Widget _buildMapTab() {
+    return Stack(
+      children: [
+        // Full-screen map as the background layer.
+        Positioned.fill(child: _buildMap()),
+
+        // Recenter button, follows the top edge of the draggable sheet.
+        Positioned(
+          right: 16,
+          // Follow the sheet, but stop at half the screen height.
+          bottom: MediaQuery.of(context).size.height *
+                  _sheetSize.clamp(0.0, 0.5) +
+              16,
+          child: _buildRecenterButton(),
+        ),
+
+        if (_isLoadingChargers)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 12,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
               ),
-              const Padding(padding: EdgeInsets.only(top: 8)),
-              Text(
-                name.isNotEmpty ? name : 'Signed in',
-                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              child: Container(
+                width: 22,
+                height: 22,
+                child: const CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+            ),
+          ),
+
+        // Floating search bar (with filter) at the top.
+        Align(
+          alignment: Alignment.topCenter,
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(padding: EdgeInsets.only(top: 8)),
+                _buildSearchBar(),
+              ],
+            ),
+          ),
+        ),
+
+        // Draggable Nearby Chargers sheet.
+        _buildNearbySheet(),
+      ],
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.search, color: Colors.grey.shade500),
+            const Padding(padding: EdgeInsets.only(left: 10)),
+            Expanded(
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Search chargers near you...',
+                  hintStyle: TextStyle(color: Colors.grey.shade500),
+                  border: InputBorder.none,
+                ),
+              ),
+            ),
+            Container(
+              width: 1,
+              height: 24,
+              color: Colors.grey.withValues(alpha: 0.25),
+            ),
+            const Padding(padding: EdgeInsets.only(left: 10)),
+            Icon(Icons.tune, color: _primary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMap() {
+    return GoogleMap(
+      initialCameraPosition: const CameraPosition(
+        target: _initialCenter,
+        zoom: 14,
+      ),
+      markers: _buildMarkers(),
+      myLocationEnabled: _locationGranted,
+      myLocationButtonEnabled: false,
+      zoomControlsEnabled: false,
+      zoomGesturesEnabled: true,
+      onMapCreated: (controller) {
+        _mapController = controller;
+        _fitMapToChargers();
+      },
+    );
+  }
+
+  Set<Marker> _buildMarkers() {
+    return _chargers.map((charger) {
+      return Marker(
+        markerId: MarkerId(charger.id),
+        position: LatLng(charger.latitude, charger.longitude),
+        icon: BitmapDescriptor.defaultMarker,
+        infoWindow: InfoWindow(
+          title: charger.name,
+          snippet: '${charger.powerLabel} · ${charger.connectorType}',
+        ),
+      );
+    }).toSet();
+  }
+
+  Widget _buildRecenterButton() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      elevation: 2,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _isLocating ? null : _recenter,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: _isLocating
+              ? Container(
+                  width: 24,
+                  height: 24,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: _primary,
+                  ),
+                )
+              : const Icon(Icons.my_location, color: _primary),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNearbySheet() {
+    return DraggableScrollableSheet(
+      controller: _sheetController,
+      initialChildSize: _initialSheetSize,
+      minChildSize: 0.12,
+      maxChildSize: 0.85,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x1F000000),
+                blurRadius: 12,
+                offset: Offset(0, -2),
+              ),
+            ],
+          ),
+          child: CustomScrollView(
+            controller: scrollController,
+            slivers: [
+              // Drag handle + header at the top of the sheet.
+              SliverToBoxAdapter(child: _buildSheetHeader()),
+
+              if (!_isLoadingChargers && _chargers.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 32),
+                    child: Center(
+                      child: Text(
+                        'No chargers found nearby.',
+                        style: TextStyle(
+                            color: Colors.grey.shade600, fontSize: 15),
+                      ),
+                    ),
+                  ),
+                ),
+
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildChargerCard(_chargers[index]),
+                    childCount: _chargers.length,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSheetHeader() {
+    return Column(
+      children: [
+        // Drag handle.
+        Container(
+          margin: const EdgeInsets.only(top: 10, bottom: 8),
+          width: 44,
+          height: 5,
+          decoration: BoxDecoration(
+            color: Colors.grey.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Nearby Chargers',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: _dark,
+                ),
+              ),
+              TextButton(
+                onPressed: () {},
+                child: const Text(
+                  'See all',
+                  style: TextStyle(
+                    color: _primary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
               ),
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildChargerCard(Charger charger) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: _primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.bolt, color: _primary, size: 28),
+          ),
+          const Padding(padding: EdgeInsets.only(left: 14)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  charger.name,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: _dark,
+                  ),
+                ),
+                const Padding(padding: EdgeInsets.only(top: 4)),
+                Text(
+                  charger.subtitle,
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          if (charger.rating != null) ...[
+            const Padding(padding: EdgeInsets.only(left: 10)),
+            Row(
+              children: [
+                const Icon(Icons.star, color: Color(0xFFF59E0B), size: 20),
+                const Padding(padding: EdgeInsets.only(left: 4)),
+                Text(
+                  charger.rating!.toString(),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomNav() {
+    return NavigationBarTheme(
+      data: NavigationBarThemeData(
+        backgroundColor: Colors.white,
+        indicatorColor: _primary.withValues(alpha: 0.12),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected ? _primary : Colors.grey.shade600,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return IconThemeData(
+            color: selected ? _primary : Colors.grey.shade600,
+          );
+        }),
+      ),
+      child: NavigationBar(
+        selectedIndex: _navIndex,
+        onDestinationSelected: (index) => setState(() => _navIndex = index),
+        destinations: const [
+          NavigationDestination(
+              icon: Icon(Icons.location_on_outlined),
+              selectedIcon: Icon(Icons.location_on),
+              label: 'Map'),
+          NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
+          NavigationDestination(
+              icon: Icon(Icons.calendar_today_outlined), label: 'Bookings'),
+          NavigationDestination(
+              icon: Icon(Icons.person_outline), label: 'Profile'),
+        ],
       ),
     );
   }
