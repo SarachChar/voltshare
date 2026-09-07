@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:voltshare_app/utils/password_policy.dart';
+
+/// Deep link used by Supabase to return to the app after the user taps the
+/// email confirmation / password-reset link. Must match the redirect URL
+/// configured in the Supabase dashboard and the native URL scheme.
+const String kAuthRedirectUrl = 'io.voltshare.app://login-callback';
 
 /// Brand colors used across the VoltShare auth experience.
 class _Brand {
@@ -67,6 +73,7 @@ class _AuthScreenState extends State<AuthScreen> {
         final response = await _supabase.auth.signUp(
           email: email,
           password: password,
+          emailRedirectTo: kAuthRedirectUrl,
         );
         if (response.session == null) {
           _showMessage(
@@ -100,22 +107,7 @@ class _AuthScreenState extends State<AuthScreen> {
     // Sign in: don't enforce the policy, just require a value.
     if (_isSignIn) return null;
 
-    if (password.length <= 8) {
-      return 'Password must be longer than 8 characters';
-    }
-    if (!RegExp(r'[a-z]').hasMatch(password)) {
-      return 'Password must contain a lowercase letter';
-    }
-    if (!RegExp(r'[A-Z]').hasMatch(password)) {
-      return 'Password must contain an uppercase letter';
-    }
-    if (!RegExp(r'[0-9]').hasMatch(password)) {
-      return 'Password must contain a number';
-    }
-    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>_\-\[\]\\/;+=~`]').hasMatch(password)) {
-      return 'Password must contain a special character';
-    }
-    return null;
+    return validateStrongPassword(password);
   }
 
   Future<void> _forgotPassword() async {
@@ -125,7 +117,10 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
     try {
-      await _supabase.auth.resetPasswordForEmail(email);
+      await _supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo: kAuthRedirectUrl,
+      );
       _showMessage('Password reset link sent to $email.');
     } on AuthException catch (error) {
       _showMessage(error.message, isError: true);
@@ -186,11 +181,7 @@ class _AuthScreenState extends State<AuthScreen> {
               color: Colors.white.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(22),
             ),
-            child: const Icon(
-              Icons.bolt,
-              color: Colors.white,
-              size: 44,
-            ),
+            child: const Icon(Icons.bolt, color: Colors.white, size: 44),
           ),
           const Padding(padding: EdgeInsets.only(top: 18)),
           const Text(
@@ -224,12 +215,20 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
       child: Row(
         children: [
-          _buildTab(label: 'Sign In', selected: _isSignIn, onTap: () {
-            if (!_isSignIn) setState(() => _isSignIn = true);
-          }),
-          _buildTab(label: 'Create Account', selected: !_isSignIn, onTap: () {
-            if (_isSignIn) setState(() => _isSignIn = false);
-          }),
+          _buildTab(
+            label: 'Sign In',
+            selected: _isSignIn,
+            onTap: () {
+              if (!_isSignIn) setState(() => _isSignIn = true);
+            },
+          ),
+          _buildTab(
+            label: 'Create Account',
+            selected: !_isSignIn,
+            onTap: () {
+              if (_isSignIn) setState(() => _isSignIn = false);
+            },
+          ),
         ],
       ),
     );
@@ -351,8 +350,10 @@ class _AuthScreenState extends State<AuthScreen> {
         filled: true,
         fillColor: _Brand.field,
         suffixIcon: suffixIcon,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 20,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,

@@ -21,8 +21,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const double _initialSheetSize = 0.30;
 
-  final ChargerController _controller =
-      ChargerController(ChargerSupabaseService());
+  final ChargerController _controller = ChargerController(
+    ChargerSupabaseService(),
+  );
   GoogleMapController? _mapController;
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
@@ -32,6 +33,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLocating = false;
   bool _locationGranted = false;
   int _navIndex = 0;
+
+  /// When set, the sheet shows this charger's details instead of the list.
+  Charger? _selectedCharger;
+
+  /// Measured height of the details panel, used to position the recenter
+  /// button just above it.
+  final GlobalKey _detailsKey = GlobalKey();
+  double _detailsHeight = 0;
 
   /// Current sheet size as a fraction of screen height (0..1). Drives the
   /// position of the Google logo (via map padding) and the recenter button.
@@ -83,11 +92,60 @@ class _HomeScreenState extends State<HomeScreen> {
     // Center on the first charger for now.
     final first = _chargers.first;
     _mapController!.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(first.latitude, first.longitude), 13),
+    );
+  }
+
+  /// Focuses the map on [charger] and shows its details in the sheet.
+  /// Called from both a map marker tap and a list item tap.
+  void _selectCharger(Charger charger) {
+    setState(() => _selectedCharger = charger);
+
+    _mapController?.animateCamera(
       CameraUpdate.newLatLngZoom(
-        LatLng(first.latitude, first.longitude),
-        13,
+        LatLng(charger.latitude, charger.longitude),
+        16,
       ),
     );
+
+    // Bring the sheet up to a comfortable height for the details.
+    if (_sheetController.isAttached) {
+      _sheetController.animateTo(
+        0.45,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  /// Returns from the details view back to the nearby list.
+  void _clearSelection() {
+    setState(() {
+      _selectedCharger = null;
+      _detailsHeight = 0;
+      // Reset immediately so the recenter button snaps back above the sheet
+      // instead of waiting for the sheet to move.
+      _sheetSize = _initialSheetSize;
+    });
+    if (_sheetController.isAttached) {
+      _sheetController.animateTo(
+        _initialSheetSize,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  /// Reads the rendered height of the details panel and updates state so the
+  /// recenter button can be positioned just above it.
+  void _measureDetails() {
+    if (!mounted) return;
+    final box = _detailsKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final height = box.size.height;
+    if (height != _detailsHeight) {
+      setState(() => _detailsHeight = height);
+    }
   }
 
   Future<void> _recenter() async {
@@ -147,10 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showLocationMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red.shade600,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red.shade600),
     );
   }
 
@@ -185,13 +240,15 @@ class _HomeScreenState extends State<HomeScreen> {
         // Full-screen map as the background layer.
         Positioned.fill(child: _buildMap()),
 
-        // Recenter button, follows the top edge of the draggable sheet.
+        // Recenter button. In details mode it sits just above the details
+        // panel; in list mode it follows the sheet (capped at half screen).
         Positioned(
           right: 16,
-          // Follow the sheet, but stop at half the screen height.
-          bottom: MediaQuery.of(context).size.height *
-                  _sheetSize.clamp(0.0, 0.5) +
-              16,
+          bottom: _selectedCharger != null
+              ? _detailsHeight + 16
+              : MediaQuery.of(context).size.height *
+                        _sheetSize.clamp(0.0, 0.5) +
+                    16,
           child: _buildRecenterButton(),
         ),
 
@@ -298,6 +355,7 @@ class _HomeScreenState extends State<HomeScreen> {
           title: charger.name,
           snippet: '${charger.powerLabel} · ${charger.connectorType}',
         ),
+        onTap: () => _selectCharger(charger),
       );
     }).toSet();
   }
@@ -328,6 +386,38 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildNearbySheet() {
+    const sheetDecoration = BoxDecoration(
+      color: Color(0xFFF3F4F6),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      boxShadow: [
+        BoxShadow(
+          color: Color(0x1F000000),
+          blurRadius: 12,
+          offset: Offset(0, -2),
+        ),
+      ],
+    );
+
+    // Details mode: a bottom panel sized to its content (fixed height up to
+    // the "More details" button), not draggable.
+    if (_selectedCharger != null) {
+      // Measure the panel's height after it lays out, so the recenter button
+      // can sit right above it.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _measureDetails());
+      return Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          key: _detailsKey,
+          decoration: sheetDecoration,
+          child: SafeArea(
+            top: false,
+            child: _buildDetailsView(_selectedCharger!),
+          ),
+        ),
+      );
+    }
+
+    // List mode: draggable sheet.
     return DraggableScrollableSheet(
       controller: _sheetController,
       initialChildSize: _initialSheetSize,
@@ -335,50 +425,187 @@ class _HomeScreenState extends State<HomeScreen> {
       maxChildSize: 0.85,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF3F4F6),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x1F000000),
-                blurRadius: 12,
-                offset: Offset(0, -2),
-              ),
-            ],
-          ),
-          child: CustomScrollView(
-            controller: scrollController,
-            slivers: [
-              // Drag handle + header at the top of the sheet.
-              SliverToBoxAdapter(child: _buildSheetHeader()),
-
-              if (!_isLoadingChargers && _chargers.isEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 32),
-                    child: Center(
-                      child: Text(
-                        'No chargers found nearby.',
-                        style: TextStyle(
-                            color: Colors.grey.shade600, fontSize: 15),
-                      ),
-                    ),
-                  ),
-                ),
-
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => _buildChargerCard(_chargers[index]),
-                    childCount: _chargers.length,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          decoration: sheetDecoration,
+          child: _buildListView(scrollController),
         );
       },
+    );
+  }
+
+  Widget _buildListView(ScrollController scrollController) {
+    return CustomScrollView(
+      controller: scrollController,
+      slivers: [
+        // Drag handle + header at the top of the sheet.
+        SliverToBoxAdapter(child: _buildSheetHeader()),
+
+        if (!_isLoadingChargers && _chargers.isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Center(
+                child: Text(
+                  'No chargers found nearby.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+                ),
+              ),
+            ),
+          ),
+
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildChargerCard(_chargers[index]),
+              childCount: _chargers.length,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDetailsView(Charger charger) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Drag handle.
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 12),
+              width: 44,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.grey.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+
+          // Title row with a back-to-list button.
+          Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: _primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.bolt, color: _primary, size: 28),
+              ),
+              const Padding(padding: EdgeInsets.only(left: 14)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      charger.name,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: _dark,
+                      ),
+                    ),
+                    if (charger.address.isNotEmpty) ...[
+                      const Padding(padding: EdgeInsets.only(top: 4)),
+                      Text(
+                        charger.address,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: _clearSelection,
+                icon: const Icon(Icons.close),
+                tooltip: 'Back to list',
+              ),
+            ],
+          ),
+
+          const Padding(padding: EdgeInsets.only(top: 16)),
+
+          // Quick info rows.
+          _buildInfoRow(
+            Icons.attach_money,
+            'Price',
+            '฿${charger.pricePerKwh.toStringAsFixed(2)} / kWh',
+          ),
+          _buildInfoRow(Icons.access_time, 'Hours', 'Open 24 hrs'),
+          _buildInfoRow(
+            Icons.bolt,
+            'Power',
+            '${charger.powerLabel} · ${charger.connectorType}',
+          ),
+          _buildInfoRow(
+            Icons.info_outline,
+            'Status',
+            charger.status.isNotEmpty ? charger.status : 'Unknown',
+          ),
+
+          const Padding(padding: EdgeInsets.only(top: 20)),
+
+          // More details button (no real navigation yet).
+          Container(
+            height: 54,
+            child: ElevatedButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Charger details coming soon.')),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Text(
+                'More details',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: _primary, size: 22),
+          const Padding(padding: EdgeInsets.only(left: 12)),
+          Text(
+            label,
+            style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+          ),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: _dark,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -427,64 +654,67 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildChargerCard(Charger charger) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: _primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
+    return GestureDetector(
+      onTap: () => _selectCharger(charger),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: _primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.bolt, color: _primary, size: 28),
             ),
-            child: const Icon(Icons.bolt, color: _primary, size: 28),
-          ),
-          const Padding(padding: EdgeInsets.only(left: 14)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  charger.name,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: _dark,
+            const Padding(padding: EdgeInsets.only(left: 14)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    charger.name,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: _dark,
+                    ),
                   ),
-                ),
-                const Padding(padding: EdgeInsets.only(top: 4)),
-                Text(
-                  charger.subtitle,
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ),
-          if (charger.rating != null) ...[
-            const Padding(padding: EdgeInsets.only(left: 10)),
-            Row(
-              children: [
-                const Icon(Icons.star, color: Color(0xFFF59E0B), size: 20),
-                const Padding(padding: EdgeInsets.only(left: 4)),
-                Text(
-                  charger.rating!.toString(),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF334155),
+                  const Padding(padding: EdgeInsets.only(top: 4)),
+                  Text(
+                    charger.subtitle,
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+            if (charger.rating != null) ...[
+              const Padding(padding: EdgeInsets.only(left: 10)),
+              Row(
+                children: [
+                  const Icon(Icons.star, color: Color(0xFFF59E0B), size: 20),
+                  const Padding(padding: EdgeInsets.only(left: 4)),
+                  Text(
+                    charger.rating!.toString(),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -514,14 +744,19 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (index) => setState(() => _navIndex = index),
         destinations: const [
           NavigationDestination(
-              icon: Icon(Icons.location_on_outlined),
-              selectedIcon: Icon(Icons.location_on),
-              label: 'Map'),
+            icon: Icon(Icons.location_on_outlined),
+            selectedIcon: Icon(Icons.location_on),
+            label: 'Map',
+          ),
           NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
           NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined), label: 'Bookings'),
+            icon: Icon(Icons.calendar_today_outlined),
+            label: 'Bookings',
+          ),
           NavigationDestination(
-              icon: Icon(Icons.person_outline), label: 'Profile'),
+            icon: Icon(Icons.person_outline),
+            label: 'Profile',
+          ),
         ],
       ),
     );
