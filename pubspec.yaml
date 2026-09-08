@@ -14,13 +14,23 @@ dependencies:
   provider: ^6.1.2
   google_maps_flutter: ^2.9.0
   geolocator: ^13.0.2
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/
+
+flutter_launcher_icons:
+  image_path: "assets/images/voltshare_logo.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  # Background used when flattening the (transparent) logo for iOS icons.
+  background_color_ios: "#FFFFFF"

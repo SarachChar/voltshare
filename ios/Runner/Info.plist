@@ -6,6 +6,12 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>We use your location to show your position on the map and find chargers near you.</string>
+	<!-- Allow querying/opening external map apps for navigation. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+		<string>maps</string>
+	</array>
 	<!-- Deep link for Supabase auth callbacks (email verify / password reset). -->
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -23,7 +29,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Voltshare App</string>
+	<string>VoltShare</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

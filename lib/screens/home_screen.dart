@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/screens/blank_screen.dart';
@@ -553,30 +554,142 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const Padding(padding: EdgeInsets.only(top: 20)),
 
-          // More details button (no real navigation yet).
-          Container(
-            height: 54,
-            child: ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Charger details coming soon.')),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
+          // Action row: navigate (left) + more details (right).
+          Row(
+            children: [
+              // Navigate button — opens an external map app for directions.
+              Container(
+                height: 54,
+                width: 54,
+                decoration: BoxDecoration(
+                  color: _primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(16),
                 ),
+                child: IconButton(
+                  onPressed: () => _showNavigationOptions(charger),
+                  icon: const Icon(Icons.directions, color: _primary),
+                  tooltip: 'Navigate',
+                ),
               ),
-              child: const Text(
-                'More details',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              const Padding(padding: EdgeInsets.only(left: 12)),
+              Expanded(
+                child: Container(
+                  height: 54,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Charger details coming soon.'),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text(
+                      'More details',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// Shows a bottom sheet to pick which map app to navigate with.
+  void _showNavigationOptions(Charger charger) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Navigate with',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.map, color: _primary),
+                title: const Text('Google Maps'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openInGoogleMaps(charger);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.map_outlined, color: _primary),
+                title: const Text('Apple Maps'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openInAppleMaps(charger);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openInGoogleMaps(Charger charger) async {
+    final lat = charger.latitude;
+    final lng = charger.longitude;
+    // Prefer the Google Maps app scheme; fall back to the universal https URL.
+    final appUri = Uri.parse(
+      'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving',
+    );
+    final webUri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination=$lat,$lng',
+    );
+
+    if (await canLaunchUrl(appUri)) {
+      await launchUrl(appUri);
+    } else if (!await launchUrl(webUri, mode: LaunchMode.externalApplication)) {
+      _showNavError();
+    }
+  }
+
+  Future<void> _openInAppleMaps(Charger charger) async {
+    final lat = charger.latitude;
+    final lng = charger.longitude;
+    final appUri = Uri.parse('maps://?daddr=$lat,$lng');
+    final webUri = Uri.parse('https://maps.apple.com/?daddr=$lat,$lng');
+
+    if (await canLaunchUrl(appUri)) {
+      await launchUrl(appUri);
+    } else if (!await launchUrl(webUri, mode: LaunchMode.externalApplication)) {
+      _showNavError();
+    }
+  }
+
+  void _showNavError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Could not open a map app.'),
+        backgroundColor: Colors.red.shade600,
       ),
     );
   }
