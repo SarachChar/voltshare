@@ -33,6 +33,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isSignIn = true;
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _isSendingReset = false;
 
   SupabaseClient get _supabase => Supabase.instance.client;
 
@@ -116,6 +117,7 @@ class _AuthScreenState extends State<AuthScreen> {
       _showMessage('Enter your email address first.', isError: true);
       return;
     }
+    setState(() => _isSendingReset = true);
     try {
       await _supabase.auth.resetPasswordForEmail(
         email,
@@ -126,6 +128,8 @@ class _AuthScreenState extends State<AuthScreen> {
       _showMessage(error.message, isError: true);
     } catch (_) {
       _showMessage('Could not send reset email.', isError: true);
+    } finally {
+      if (mounted) setState(() => _isSendingReset = false);
     }
   }
 
@@ -310,15 +314,26 @@ class _AuthScreenState extends State<AuthScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: _isLoading ? null : _forgotPassword,
-                child: const Text(
-                  'Forgot password?',
-                  style: TextStyle(
-                    color: _Brand.primary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
-                ),
+                onPressed: (_isLoading || _isSendingReset)
+                    ? null
+                    : _forgotPassword,
+                child: _isSendingReset
+                    ? Container(
+                        width: 18,
+                        height: 18,
+                        child: const CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: _Brand.primary,
+                        ),
+                      )
+                    : const Text(
+                        'Forgot password?',
+                        style: TextStyle(
+                          color: _Brand.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
               ),
             ),
           ] else

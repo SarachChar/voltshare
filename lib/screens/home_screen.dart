@@ -33,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoadingChargers = false;
   bool _isLocating = false;
   bool _locationGranted = false;
+  bool _initialCameraPositioned = false;
   int _navIndex = 0;
 
   /// When set, the sheet shows this charger's details instead of the list.
@@ -58,8 +59,8 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     });
     _loadChargers();
-    // Request location and move to the user's position on first open.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _recenter());
+    // The map is centered on the user's current location once it's created
+    // (see onMapCreated), so the home map always opens at current location.
   }
 
   void _onSheetMoved() {
@@ -76,7 +77,13 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _chargers = chargers;
       });
-      _fitMapToChargers();
+      // If we couldn't center on the user's location (denied/disabled) and the
+      // map hasn't been positioned yet, focus the first charger now that the
+      // list is loaded.
+      if (!_locationGranted && !_initialCameraPositioned) {
+        _initialCameraPositioned = true;
+        _focusFirstCharger();
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -86,15 +93,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-  }
-
-  void _fitMapToChargers() {
-    if (_mapController == null || _chargers.isEmpty) return;
-    // Center on the first charger for now.
-    final first = _chargers.first;
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(first.latitude, first.longitude), 13),
-    );
   }
 
   /// Focuses the map on [charger] and shows its details in the sheet.
@@ -149,21 +147,39 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _recenter() async {
+  Future<void> _recenter({bool fallbackToFirstCharger = false}) async {
     if (_isLocating) return;
     setState(() => _isLocating = true);
     try {
       final position = await _determinePosition();
-      if (!mounted || position == null) return;
-      await _mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(
-          LatLng(position.latitude, position.longitude),
-          15,
-        ),
-      );
+      if (!mounted) return;
+
+      if (position != null) {
+        _initialCameraPositioned = true;
+        await _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng(position.latitude, position.longitude),
+            15,
+          ),
+        );
+      } else if (fallbackToFirstCharger && _chargers.isNotEmpty) {
+        // Location unavailable: focus the first charger instead. If chargers
+        // aren't loaded yet, _loadChargers() will focus once ready.
+        _initialCameraPositioned = true;
+        _focusFirstCharger();
+      }
     } finally {
       if (mounted) setState(() => _isLocating = false);
     }
+  }
+
+  /// Centers the map on the first charger in the list, when available.
+  void _focusFirstCharger() {
+    if (_mapController == null || _chargers.isEmpty) return;
+    final first = _chargers.first;
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(first.latitude, first.longitude), 13),
+    );
   }
 
   /// Requests location permission (if needed) and returns the current
@@ -341,7 +357,9 @@ class _HomeScreenState extends State<HomeScreen> {
       zoomGesturesEnabled: true,
       onMapCreated: (controller) {
         _mapController = controller;
-        _fitMapToChargers();
+        // Open at the user's current location; if location is unavailable,
+        // fall back to the first charger.
+        _recenter(fallbackToFirstCharger: true);
       },
     );
   }
