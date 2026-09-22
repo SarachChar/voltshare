@@ -48,6 +48,13 @@ class _HomeScreenState extends State<HomeScreen> {
   /// position of the Google logo (via map padding) and the recenter button.
   double _sheetSize = _initialSheetSize;
 
+  /// Last known camera position, tracked so the "reset orientation" button can
+  /// restore the default bearing/tilt without moving the map's center or zoom.
+  CameraPosition _cameraPosition = const CameraPosition(
+    target: _initialCenter,
+    zoom: 14,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -173,6 +180,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Resets the map orientation to the default (north-up, no tilt), keeping the
+  /// current center and zoom. Used by the "re-center map" button.
+  void _resetMapOrientation() {
+    _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: _cameraPosition.target,
+          zoom: _cameraPosition.zoom,
+          bearing: 0,
+          tilt: 0,
+        ),
+      ),
+    );
+  }
+
   /// Centers the map on the first charger in the list, when available.
   void _focusFirstCharger() {
     if (_mapController == null || _chargers.isEmpty) return;
@@ -266,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen> {
               : MediaQuery.of(context).size.height *
                         _sheetSize.clamp(0.0, 0.5) +
                     16,
-          child: _buildRecenterButton(),
+          child: _buildMapControls(),
         ),
 
         if (_isLoadingChargers)
@@ -355,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
       zoomGesturesEnabled: true,
+      onCameraMove: (position) => _cameraPosition = position,
       onMapCreated: (controller) {
         _mapController = controller;
         // Open at the user's current location; if location is unavailable,
@@ -377,6 +400,36 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: () => _selectCharger(charger),
       );
     }).toSet();
+  }
+
+  /// The stacked map controls: a "reset orientation" button on top of the
+  /// "current location" button.
+  Widget _buildMapControls() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildRecenterMapButton(),
+        const Padding(padding: EdgeInsets.only(top: 12)),
+        _buildRecenterButton(),
+      ],
+    );
+  }
+
+  /// Button that resets the map to the default orientation (north-up).
+  Widget _buildRecenterMapButton() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      elevation: 2,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _resetMapOrientation,
+        child: const Padding(
+          padding: EdgeInsets.all(12),
+          child: Icon(Icons.explore, color: _primary),
+        ),
+      ),
+    );
   }
 
   Widget _buildRecenterButton() {
