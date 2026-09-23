@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/screens/blank_screen.dart';
+import 'package:voltshare_app/screens/charger_detail_screen.dart';
 import 'package:voltshare_app/screens/profile_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
 
@@ -648,9 +649,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 54,
                   child: ElevatedButton(
                     onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Charger details coming soon.'),
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ChargerDetailScreen(
+                            charger: charger,
+                            controller: _controller,
+                          ),
                         ),
                       );
                     },

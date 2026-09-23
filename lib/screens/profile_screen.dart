@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voltshare_app/models/profile_provider.dart';
+import 'package:voltshare_app/screens/host_dashboard_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -86,6 +87,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
                 ),
               const Padding(padding: EdgeInsets.only(top: 40)),
+              _buildSwitchToHostButton(),
+              const Padding(padding: EdgeInsets.only(top: 16)),
               _buildLogoutButton(),
             ],
           ),
@@ -120,31 +123,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildSwitchToHostButton() {
+    return Container(
+      height: 56,
+      child: ElevatedButton.icon(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const HostDashboardScreen(),
+            ),
+          );
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFDFF7EF),
+          foregroundColor: _primary,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: _primary, width: 1.5),
+          ),
+        ),
+        icon: const Icon(Icons.swap_horiz),
+        label: const Text(
+          'Switch to Host Mode',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLogoutButton() {
     return Container(
       height: 56,
       child: ElevatedButton.icon(
         onPressed: _isLoggingOut ? null : _logout,
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.red.shade600,
-          foregroundColor: Colors.white,
+          backgroundColor: const Color(0xFFFDECEC),
+          foregroundColor: Colors.red.shade600,
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.red.shade200, width: 1.5),
           ),
         ),
         icon: _isLoggingOut
             ? Container(
                 width: 20,
                 height: 20,
-                child: const CircularProgressIndicator(
+                child: CircularProgressIndicator(
                   strokeWidth: 2.5,
-                  color: Colors.white,
+                  color: Colors.red.shade600,
                 ),
               )
             : const Icon(Icons.logout),
         label: Text(
-          _isLoggingOut ? 'Logging out...' : 'Log Out',
+          _isLoggingOut ? 'Signing out...' : 'Sign Out',
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
       ),
