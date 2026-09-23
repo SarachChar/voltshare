@@ -394,10 +394,8 @@ class _HomeScreenState extends State<HomeScreen> {
         markerId: MarkerId(charger.id),
         position: LatLng(charger.latitude, charger.longitude),
         icon: BitmapDescriptor.defaultMarker,
-        infoWindow: InfoWindow(
-          title: charger.name,
-          snippet: '${charger.powerLabel} · ${charger.connectorType}',
-        ),
+        // InfoWindow disabled for now; tapping a marker raises the details
+        // sheet via _selectCharger instead of showing the plain Google bubble.
         onTap: () => _selectCharger(charger),
       );
     }).toSet();
@@ -612,7 +610,6 @@ class _HomeScreenState extends State<HomeScreen> {
             'Price',
             '฿${charger.pricePerKwh.toStringAsFixed(2)} / kWh',
           ),
-          _buildInfoRow(Icons.access_time, 'Hours', 'Open 24 hrs'),
           _buildInfoRow(
             Icons.bolt,
             'Power',
@@ -884,23 +881,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            if (charger.rating != null) ...[
-              const Padding(padding: EdgeInsets.only(left: 10)),
-              Row(
-                children: [
-                  const Icon(Icons.star, color: Color(0xFFF59E0B), size: 20),
-                  const Padding(padding: EdgeInsets.only(left: 4)),
-                  Text(
-                    charger.rating!.toString(),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF334155),
-                    ),
-                  ),
-                ],
-              ),
-            ],
           ],
         ),
       ),

@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:voltshare_app/models/charger_model.dart';
 
 abstract class ChargerService {
@@ -15,6 +16,30 @@ abstract class ChargerService {
   /// Returns the weekly availability rows for [chargerId], ordered by
   /// `day_of_week` (0 = Sunday .. 6 = Saturday).
   Future<List<ChargerAvailability>> getChargerAvailability(String chargerId);
+
+  /// Returns the promotions for [chargerId], most recent first.
+  Future<List<ChargerPromotion>> getChargerPromotions(String chargerId);
+
+  /// Updates the `status` of a promotion ("ACTIVE" / "INACTIVE" / "EXPIRED")
+  /// and returns the saved row.
+  Future<ChargerPromotion> updatePromotionStatus(
+    String promotionId,
+    String status,
+  );
+
+  /// Creates a new promotion and returns the inserted row.
+  Future<ChargerPromotion> createPromotion({
+    required String chargerId,
+    required String title,
+    String description,
+    DateTime? validFrom,
+    DateTime? validUntil,
+    String status,
+    String termsAndConditions,
+  });
+
+  /// Soft-deletes a promotion by stamping its `deleted_at` column.
+  Future<void> deletePromotion(String promotionId);
 }
 
 /// Supabase-backed implementation that reads from the `chargers` table.
@@ -77,6 +102,78 @@ class ChargerSupabaseService implements ChargerService {
         .toList();
   }
 
+  @override
+  Future<List<ChargerPromotion>> getChargerPromotions(String chargerId) async {
+    final List<dynamic> data = await _client
+        .from('charger_promotions')
+        .select()
+        .eq('charger_id', chargerId)
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false);
+
+    return data
+        .map(
+          (item) => ChargerPromotion.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  @override
+  Future<ChargerPromotion> updatePromotionStatus(
+    String promotionId,
+    String status,
+  ) async {
+    final data = await _client
+        .from('charger_promotions')
+        .update({
+          'status': status,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', promotionId)
+        .select()
+        .single();
+
+    return ChargerPromotion.fromJson(data);
+  }
+
+  @override
+  Future<ChargerPromotion> createPromotion({
+    required String chargerId,
+    required String title,
+    String description = '',
+    DateTime? validFrom,
+    DateTime? validUntil,
+    String status = 'ACTIVE',
+    String termsAndConditions = '',
+  }) async {
+    final data = await _client
+        .from('charger_promotions')
+        .insert({
+          'charger_id': chargerId,
+          'title': title,
+          'description': description,
+          'valid_from': validFrom?.toUtc().toIso8601String(),
+          'valid_until': validUntil?.toUtc().toIso8601String(),
+          'status': status,
+          'terms_and_conditions': termsAndConditions,
+        })
+        .select()
+        .single();
+
+    return ChargerPromotion.fromJson(data);
+  }
+
+  @override
+  Future<void> deletePromotion(String promotionId) async {
+    await _client
+        .from('charger_promotions')
+        .update({
+          'deleted_at': DateTime.now().toUtc().toIso8601String(),
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', promotionId);
+  }
+
   /// Returns a copy of [image] whose [ChargerImage.imageUrl] is a usable public
   /// URL. If the stored value already looks like a full URL it's kept as-is;
   /// otherwise it's treated as a storage path inside [_imageBucket].
@@ -91,80 +188,5 @@ class ChargerSupabaseService implements ChargerService {
       imageUrl: publicUrl,
       displayOrder: image.displayOrder,
     );
-  }
-}
-
-/// Mock implementation kept for offline/local development.
-class ChargerMockService implements ChargerService {
-  @override
-  Future<List<Charger>> getNearbyChargers() async {
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    return [
-      Charger('c1', "Somchai's Fast Charger", 'AC', 'Type 2', 22, 8, 'available',
-          13.7466, 100.5340, distanceKm: 0.3, rating: 4.8),
-      Charger('c2', 'Apinya Home Station', 'AC', 'Type 2', 7, 6, 'available',
-          13.7500, 100.5300, distanceKm: 0.7, rating: 4.5),
-      Charger('c3', 'DC Fast Hub Ratchada', 'DC', 'CCS2', 50, 12, 'available',
-          13.7420, 100.5280, distanceKm: 1.2, rating: 4.9),
-    ];
-  }
-
-  @override
-  Future<List<Charger>> getChargersByHost(String hostId) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    return [
-      Charger('c1', 'Home Garage – Type 2', 'AC', 'Type 2', 22, 8, 'available',
-          13.7466, 100.5340, hostId: hostId),
-      Charger('c2', 'Backyard DC Fast', 'DC', 'CCS2', 50, 8, 'unavailable',
-          13.7500, 100.5300, hostId: hostId),
-    ];
-  }
-
-  @override
-  Future<List<ChargerImage>> getChargerImages(String chargerId) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    return [
-      ChargerImage(
-        id: 'img1',
-        chargerId: chargerId,
-        imageUrl: 'https://picsum.photos/seed/$chargerId-1/800/600',
-        displayOrder: 0,
-      ),
-      ChargerImage(
-        id: 'img2',
-        chargerId: chargerId,
-        imageUrl: 'https://picsum.photos/seed/$chargerId-2/800/600',
-        displayOrder: 1,
-      ),
-      ChargerImage(
-        id: 'img3',
-        chargerId: chargerId,
-        imageUrl: 'https://picsum.photos/seed/$chargerId-3/800/600',
-        displayOrder: 2,
-      ),
-    ];
-  }
-
-  @override
-  Future<List<ChargerAvailability>> getChargerAvailability(
-    String chargerId,
-  ) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    return List.generate(7, (day) {
-      // Mock: closed on Sunday (0), open 09:00-20:00 the rest of the week.
-      final open = day != 0;
-      return ChargerAvailability(
-        id: 'avail-$chargerId-$day',
-        chargerId: chargerId,
-        dayOfWeek: day,
-        startTime: open ? '09:00:00' : '',
-        endTime: open ? '20:00:00' : '',
-        isAvailable: open,
-      );
-    });
   }
 }

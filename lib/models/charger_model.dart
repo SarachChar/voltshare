@@ -12,13 +12,6 @@ class Charger {
   double pricePerKwh;
   String status;
 
-  /// Not stored in the `chargers` table. Computed from the user's location
-  /// when available, otherwise null.
-  double? distanceKm;
-
-  /// Not stored in the `chargers` table yet. Null when unknown.
-  double? rating;
-
   Charger(
     this.id,
     this.name,
@@ -32,8 +25,6 @@ class Charger {
     this.hostId = '',
     this.description = '',
     this.address = '',
-    this.distanceKm,
-    this.rating,
   });
 
   factory Charger.fromJson(Map<String, dynamic> json) {
@@ -50,8 +41,6 @@ class Charger {
       hostId: json['host_id'] as String? ?? '',
       description: json['description'] as String? ?? '',
       address: json['address'] as String? ?? '',
-      distanceKm: (json['distance_km'] as num?)?.toDouble(),
-      rating: (json['rating'] as num?)?.toDouble(),
     );
   }
 
@@ -80,12 +69,9 @@ class Charger {
     return '$value kW';
   }
 
-  /// Subtitle line for a charger card, e.g. "0.3 km · 22 kW · Type 2".
-  /// The distance part is omitted when [distanceKm] is unknown.
+  /// Subtitle line for a charger card, e.g. "22 kW · Type 2".
   String get subtitle {
-    final parts = <String>[];
-    if (distanceKm != null) parts.add('$distanceKm km');
-    parts.add(powerLabel);
+    final parts = <String>[powerLabel];
     if (connectorType.isNotEmpty) parts.add(connectorType);
     return parts.join(' · ');
   }
@@ -233,4 +219,87 @@ class ChargerAvailability {
           ChargerAvailability.closed(chargerId: chargerId, day: day);
     });
   }
+}
+
+/// A promotion attached to a charger, stored in the `charger_promotions` table.
+///
+/// [status] is the raw DB value ("ACTIVE" / "INACTIVE" / "EXPIRED"). Use
+/// [isActive] for a boolean view of it. [validFrom] / [validUntil] come from
+/// Postgres `timestamptz` columns and may be null when open-ended.
+class ChargerPromotion {
+  final String id;
+  final String chargerId;
+  final String title;
+  final String description;
+  final DateTime? validFrom;
+  final DateTime? validUntil;
+  final String status;
+  final String termsAndConditions;
+
+  ChargerPromotion({
+    required this.id,
+    required this.chargerId,
+    required this.title,
+    this.description = '',
+    this.validFrom,
+    this.validUntil,
+    this.status = 'ACTIVE',
+    this.termsAndConditions = '',
+  });
+
+  factory ChargerPromotion.fromJson(Map<String, dynamic> json) {
+    return ChargerPromotion(
+      id: json['id'] as String,
+      chargerId: json['charger_id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      validFrom: _parseDate(json['valid_from']),
+      validUntil: _parseDate(json['valid_until']),
+      status: json['status'] as String? ?? 'ACTIVE',
+      termsAndConditions: json['terms_and_conditions'] as String? ?? '',
+    );
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
+  }
+
+  bool get isActive => status.toLowerCase() == 'active';
+
+  /// Human-readable validity range, e.g. "1 Jan 2026 - 31 Mar 2026".
+  /// Falls back gracefully when either bound is missing.
+  String get validRangeLabel {
+    final from = validFrom;
+    final until = validUntil;
+    if (from == null && until == null) return 'No expiry';
+    if (from != null && until != null) {
+      return '${_formatDate(from)} - ${_formatDate(until)}';
+    }
+    if (until != null) return 'Until ${_formatDate(until)}';
+    return 'From ${_formatDate(from!)}';
+  }
+
+  static const List<String> _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  static String _formatDate(DateTime date) {
+    return '${date.day} ${_months[date.month - 1]} ${date.year}';
+  }
+
+  /// Public helper to format a single date as "1 Jan 2026".
+  static String formatDate(DateTime date) => _formatDate(date);
 }

@@ -35,4 +35,47 @@ class ChargerController {
   Future<List<ChargerAvailability>> fetchChargerAvailability(String chargerId) {
     return service.getChargerAvailability(chargerId);
   }
+
+  /// Fetches the promotions for a charger, most recent first.
+  Future<List<ChargerPromotion>> fetchChargerPromotions(String chargerId) {
+    return service.getChargerPromotions(chargerId);
+  }
+
+  /// Toggles a promotion's status between "ACTIVE" and "INACTIVE".
+  /// (Values are uppercase to satisfy the DB's status check constraint.)
+  Future<ChargerPromotion> togglePromotionStatus(
+    String promotionId,
+    bool active,
+  ) {
+    return service.updatePromotionStatus(
+      promotionId,
+      active ? 'ACTIVE' : 'INACTIVE',
+    );
+  }
+
+  /// Creates a new promotion for a charger.
+  Future<ChargerPromotion> createPromotion({
+    required String chargerId,
+    required String title,
+    String description = '',
+    DateTime? validFrom,
+    DateTime? validUntil,
+    String status = 'ACTIVE',
+    String termsAndConditions = '',
+  }) {
+    return service.createPromotion(
+      chargerId: chargerId,
+      title: title,
+      description: description,
+      validFrom: validFrom,
+      validUntil: validUntil,
+      status: status,
+      termsAndConditions: termsAndConditions,
+    );
+  }
+
+  /// Soft-deletes a promotion (stamps its `deleted_at`).
+  Future<void> deletePromotion(String promotionId) {
+    return service.deletePromotion(promotionId);
+  }
 }
