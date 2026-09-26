@@ -658,6 +658,7 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
 
   Widget _buildPromotionTile(String chargerId, ChargerPromotion promo) {
     final active = promo.isActive;
+    final expired = promo.status.toUpperCase() == 'EXPIRED';
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -721,16 +722,41 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
             ),
           ),
           const Padding(padding: EdgeInsets.only(left: 8)),
-          Switch.adaptive(
-            value: active,
-            activeThumbColor: Colors.white,
-            activeTrackColor: _primary,
-            onChanged: (value) =>
-                _togglePromotionStatus(chargerId, promo, value),
-          ),
+          if (expired)
+            _buildExpiredBadge()
+          else
+            Switch.adaptive(
+              value: active,
+              activeThumbColor: Colors.white,
+              activeTrackColor: _primary,
+              onChanged: (value) =>
+                  _togglePromotionStatus(chargerId, promo, value),
+            ),
           const Padding(padding: EdgeInsets.only(left: 4)),
           _buildDeletePromotionButton(chargerId, promo),
         ],
+      ),
+    );
+  }
+
+  /// Shown in place of the on/off switch when a promotion has expired. The
+  /// status is read-only here — expiry is driven by `valid_until` on the
+  /// backend, so there's nothing to toggle.
+  Widget _buildExpiredBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        'EXPIRED',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+          color: _muted,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }

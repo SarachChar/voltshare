@@ -43,11 +43,33 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen> {
   /// When false (default), only today's hours show; expanding reveals all days.
   bool _showAllHours = false;
 
+  List<ChargerPromotion> _promotions = List.empty();
+  bool _isLoadingPromotions = true;
+
   @override
   void initState() {
     super.initState();
     _loadImages();
     _loadAvailability();
+    _loadPromotions();
+  }
+
+  Future<void> _loadPromotions() async {
+    try {
+      final promos =
+          await _controller.fetchActivePromotions(widget.charger.id);
+      if (!mounted) return;
+      setState(() {
+        _promotions = promos;
+        _isLoadingPromotions = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _promotions = List.empty();
+        _isLoadingPromotions = false;
+      });
+    }
   }
 
   Future<void> _loadImages() async {
@@ -154,6 +176,7 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen> {
                   _buildSectionTitle('Details'),
                   const Padding(padding: EdgeInsets.only(top: 8)),
                   _buildInfoCard(),
+                  ..._buildPromotionsSection(),
                   const Padding(padding: EdgeInsets.only(top: 24)),
                   _buildSectionTitle('Opening Hours'),
                   const Padding(padding: EdgeInsets.only(top: 8)),
@@ -435,6 +458,131 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen> {
 
   Widget _divider() {
     return Divider(height: 1, color: Colors.grey.withValues(alpha: 0.15));
+  }
+
+  /// "Host Promotions" section: a horizontally scrollable row of promotion
+  /// cards fed by the `get-active-promotions` edge function. Hidden entirely
+  /// while loading finds no active promotions.
+  ///
+  /// Returned as a list so the caller can splice it into the details column
+  /// (and omit it cleanly when there's nothing to show).
+  List<Widget> _buildPromotionsSection() {
+    if (_isLoadingPromotions) {
+      return [
+        const Padding(padding: EdgeInsets.only(top: 24)),
+        _buildSectionTitle('Host Promotions'),
+        const Padding(padding: EdgeInsets.only(top: 12)),
+        Container(
+          height: 140,
+          alignment: Alignment.center,
+          child: const CircularProgressIndicator(color: _primary),
+        ),
+      ];
+    }
+
+    if (_promotions.isEmpty) {
+      // Nothing active to advertise — skip the section altogether.
+      return const [];
+    }
+
+    return [
+      const Padding(padding: EdgeInsets.only(top: 24)),
+      _buildSectionTitle('Host Promotions'),
+      const Padding(padding: EdgeInsets.only(top: 12)),
+      Container(
+        height: 150,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.zero,
+          itemCount: _promotions.length,
+          separatorBuilder: (_, _) =>
+              const Padding(padding: EdgeInsets.only(left: 12)),
+          itemBuilder: (context, index) =>
+              _buildPromotionCard(_promotions[index]),
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildPromotionCard(ChargerPromotion promo) {
+    return Container(
+      width: 260,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: _primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.local_offer_outlined,
+                  size: 18,
+                  color: _primary,
+                ),
+              ),
+              const Padding(padding: EdgeInsets.only(left: 10)),
+              Expanded(
+                child: Text(
+                  promo.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _dark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (promo.description.isNotEmpty) ...[
+            const Padding(padding: EdgeInsets.only(top: 10)),
+            Expanded(
+              child: Text(
+                promo.description,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ),
+          ] else
+            const Spacer(),
+          const Padding(padding: EdgeInsets.only(top: 10)),
+          Row(
+            children: [
+              Icon(Icons.event_outlined, size: 14, color: Colors.grey.shade500),
+              const Padding(padding: EdgeInsets.only(left: 4)),
+              Expanded(
+                child: Text(
+                  promo.validRangeLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   /// Weekly opening hours from `charger_availability`, one row per day.

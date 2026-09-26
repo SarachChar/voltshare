@@ -20,6 +20,10 @@ abstract class ChargerService {
   /// Returns the promotions for [chargerId], most recent first.
   Future<List<ChargerPromotion>> getChargerPromotions(String chargerId);
 
+  /// Returns only the ACTIVE, non-deleted promotions for [chargerId]
+  /// (the user-facing view), most recent first.
+  Future<List<ChargerPromotion>> getActivePromotions(String chargerId);
+
   /// Updates the `status` of a promotion ("ACTIVE" / "INACTIVE" / "EXPIRED")
   /// and returns the saved row.
   Future<ChargerPromotion> updatePromotionStatus(
@@ -104,12 +108,33 @@ class ChargerSupabaseService implements ChargerService {
 
   @override
   Future<List<ChargerPromotion>> getChargerPromotions(String chargerId) async {
-    final List<dynamic> data = await _client
-        .from('charger_promotions')
-        .select()
-        .eq('charger_id', chargerId)
-        .isFilter('deleted_at', null)
-        .order('created_at', ascending: false);
+    // Delegates to the `get-charger-promotions` edge function, which runs an
+    // expiry sweep (stamping lapsed promotions as EXPIRED) before returning
+    // every non-deleted promotion for the charger.
+    final response = await _client.functions.invoke(
+      'get-charger-promotions',
+      body: {'charger_id': chargerId},
+    );
+
+    final data = (response.data?['promotions'] as List<dynamic>?) ?? [];
+
+    return data
+        .map(
+          (item) => ChargerPromotion.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<ChargerPromotion>> getActivePromotions(String chargerId) async {
+    // Delegates to the `get-active-promotions` edge function, which runs the
+    // same expiry sweep and returns only ACTIVE, non-deleted promotions.
+    final response = await _client.functions.invoke(
+      'get-active-promotions',
+      body: {'charger_id': chargerId},
+    );
+
+    final data = (response.data?['promotions'] as List<dynamic>?) ?? [];
 
     return data
         .map(

@@ -41,6 +41,11 @@ class ChargerController {
     return service.getChargerPromotions(chargerId);
   }
 
+  /// Fetches only the ACTIVE promotions for a charger (user-facing view).
+  Future<List<ChargerPromotion>> fetchActivePromotions(String chargerId) {
+    return service.getActivePromotions(chargerId);
+  }
+
   /// Toggles a promotion's status between "ACTIVE" and "INACTIVE".
   /// (Values are uppercase to satisfy the DB's status check constraint.)
   Future<ChargerPromotion> togglePromotionStatus(
