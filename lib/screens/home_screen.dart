@@ -79,6 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadChargers() async {
+    setState(() => _isLoadingChargers = true);
     try {
       final chargers = await _controller.fetchNearbyChargers();
       if (!mounted) return;
@@ -100,6 +101,8 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: Colors.red.shade600,
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isLoadingChargers = false);
     }
   }
 
@@ -354,14 +357,36 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            Container(
-              width: 1,
-              height: 24,
-              color: Colors.grey.withValues(alpha: 0.25),
-            ),
-            const Padding(padding: EdgeInsets.only(left: 10)),
-            Icon(Icons.tune, color: _primary),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Reloads the charger list. Sits at the top of the stacked map controls
+  /// (above the compass button) and shows a spinner while a reload is in
+  /// flight.
+  Widget _buildRefreshButton() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      elevation: 2,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _isLoadingChargers ? null : _loadChargers,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: _isLoadingChargers
+              ? Container(
+                  width: 24,
+                  height: 24,
+                  alignment: Alignment.center,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: _primary,
+                  ),
+                )
+              : const Icon(Icons.refresh, color: _primary),
         ),
       ),
     );
@@ -407,6 +432,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        _buildRefreshButton(),
+        const Padding(padding: EdgeInsets.only(top: 12)),
         _buildRecenterMapButton(),
         const Padding(padding: EdgeInsets.only(top: 12)),
         _buildRecenterButton(),

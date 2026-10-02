@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
+import 'package:voltshare_app/screens/add_charger_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
 
 class HostDashboardScreen extends StatefulWidget {
@@ -256,11 +257,23 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
     );
   }
 
+  Future<void> _openAddCharger() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const AddChargerScreen()),
+    );
+    // A charger was created — reload the list so it shows up.
+    if (created == true && mounted) {
+      setState(() {
+        _chargersFuture = _loadChargers();
+      });
+    }
+  }
+
   Widget _buildAddChargerButton() {
     return Container(
       height: 64,
       child: ElevatedButton.icon(
-        onPressed: () {},
+        onPressed: _openAddCharger,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFEAFBF3),
           foregroundColor: _primary,

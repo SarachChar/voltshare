@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/services/charger_service.dart';
 
@@ -34,6 +35,16 @@ class ChargerController {
   /// Fetches the weekly availability for a charger, ordered by day of week.
   Future<List<ChargerAvailability>> fetchChargerAvailability(String chargerId) {
     return service.getChargerAvailability(chargerId);
+  }
+
+  /// Fetches the businesses available around a charger.
+  Future<List<ChargerBusiness>> fetchChargerBusinesses(String chargerId) {
+    return service.getChargerBusinesses(chargerId);
+  }
+
+  /// Fetches the business photos for a charger, ordered for display.
+  Future<List<BusinessImage>> fetchBusinessImages(String chargerId) {
+    return service.getBusinessImages(chargerId);
   }
 
   /// Fetches the promotions for a charger, most recent first.
@@ -82,5 +93,101 @@ class ChargerController {
   /// Soft-deletes a promotion (stamps its `deleted_at`).
   Future<void> deletePromotion(String promotionId) {
     return service.deletePromotion(promotionId);
+  }
+
+  /// Creates a new charger row and returns the saved charger (with its id).
+  Future<Charger> createCharger({
+    required String hostId,
+    required String name,
+    String description = '',
+    String address = '',
+    double latitude = 0.0,
+    double longitude = 0.0,
+    String chargerType = '',
+    String connectorType = '',
+    double powerKw = 0.0,
+    double pricePerKwh = 0.0,
+    String status = 'available',
+  }) {
+    return service.createCharger(
+      hostId: hostId,
+      name: name,
+      description: description,
+      address: address,
+      latitude: latitude,
+      longitude: longitude,
+      chargerType: chargerType,
+      connectorType: connectorType,
+      powerKw: powerKw,
+      pricePerKwh: pricePerKwh,
+      status: status,
+    );
+  }
+
+  /// Links an uploaded image path to a charger in `charger_images`.
+  Future<ChargerImage> insertChargerImage({
+    required String chargerId,
+    required String imagePath,
+    required int displayOrder,
+  }) {
+    return service.insertChargerImage(
+      chargerId: chargerId,
+      imagePath: imagePath,
+      displayOrder: displayOrder,
+    );
+  }
+
+  /// Saves a charger's weekly opening hours into `charger_availability`.
+  Future<void> insertChargerAvailability({
+    required String chargerId,
+    required List<ChargerAvailability> days,
+  }) {
+    return service.insertChargerAvailability(
+      chargerId: chargerId,
+      days: days,
+    );
+  }
+
+  /// Adds a business offered at a charger.
+  Future<ChargerBusiness> insertChargerBusiness({
+    required String chargerId,
+    required String businessType,
+    required String businessName,
+    String description = '',
+  }) {
+    return service.insertChargerBusiness(
+      chargerId: chargerId,
+      businessType: businessType,
+      businessName: businessName,
+      description: description,
+    );
+  }
+
+  /// Links an uploaded business photo path to a charger in `business_images`.
+  Future<BusinessImage> insertBusinessImage({
+    required String chargerId,
+    required String imagePath,
+    required int displayOrder,
+  }) {
+    return service.insertBusinessImage(
+      chargerId: chargerId,
+      imagePath: imagePath,
+      displayOrder: displayOrder,
+    );
+  }
+
+  /// Uploads a single charger image to storage and returns its stored path.
+  Future<String> uploadChargerImage({
+    required String folder,
+    required int index,
+    required Uint8List bytes,
+    required String fileExtension,
+  }) {
+    return service.uploadChargerImage(
+      folder: folder,
+      index: index,
+      bytes: bytes,
+      fileExtension: fileExtension,
+    );
   }
 }

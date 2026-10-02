@@ -119,6 +119,66 @@ class ChargerImage {
   }
 }
 
+/// A business available to drivers while their EV charges, stored in the
+/// `charger_businesses` table. Soft-deleted rows (`deleted_at` set) are
+/// filtered out by the service layer.
+class ChargerBusiness {
+  final String id;
+  final String chargerId;
+  final String businessType;
+  final String businessName;
+  final String description;
+
+  ChargerBusiness({
+    required this.id,
+    required this.chargerId,
+    required this.businessType,
+    required this.businessName,
+    this.description = '',
+  });
+
+  factory ChargerBusiness.fromJson(Map<String, dynamic> json) {
+    return ChargerBusiness(
+      id: json['id'] as String,
+      chargerId: json['charger_id'] as String? ?? '',
+      businessType: json['business_type'] as String? ?? '',
+      businessName: json['business_name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+    );
+  }
+}
+
+/// A photo of the businesses around a charger, stored in the `business_images`
+/// table. Keyed by `charger_id`, so all of a charger's business photos are
+/// shown together.
+///
+/// [imageUrl] holds the raw DB value — either a full public URL or a storage
+/// path inside the `voltshare_charger` bucket (e.g.
+/// `business/<charger_id>/1.jpg`). The service layer resolves paths to public
+/// URLs before they reach the UI.
+class BusinessImage {
+  final String id;
+  final String chargerId;
+  final String imageUrl;
+  final int displayOrder;
+
+  BusinessImage({
+    required this.id,
+    required this.chargerId,
+    required this.imageUrl,
+    this.displayOrder = 0,
+  });
+
+  factory BusinessImage.fromJson(Map<String, dynamic> json) {
+    return BusinessImage(
+      id: json['id'] as String,
+      chargerId: json['charger_id'] as String? ?? '',
+      imageUrl: json['image_url'] as String? ?? '',
+      displayOrder: (json['display_order'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 /// One row of a charger's weekly schedule, stored in the `charger_availability`
 /// table. [dayOfWeek] follows the DB convention where 0 = Sunday .. 6 = Saturday.
 /// [startTime] and [endTime] come from Postgres `time` columns as "HH:mm:ss".
