@@ -215,15 +215,18 @@ class ChargerSupabaseService implements ChargerService {
 
   @override
   Future<List<ChargerPromotion>> getChargerPromotions(String chargerId) async {
-    // Delegates to the `get-charger-promotions` edge function, which runs an
-    // expiry sweep (stamping lapsed promotions as EXPIRED) before returning
-    // every non-deleted promotion for the charger.
-    final response = await _client.functions.invoke(
-      'get-charger-promotions',
-      body: {'charger_id': chargerId},
-    );
-
-    final data = (response.data?['promotions'] as List<dynamic>?) ?? [];
+    // Queries `charger_promotions` directly for every non-deleted promotion
+    // for the charger, most recent first. Note this does not run the expiry
+    // sweep the `get-charger-promotions` edge function used to do, so a
+    // promotion whose `valid_until` has lapsed stays at whatever `status`
+    // it already has until something else (e.g. updatePromotionStatus)
+    // flips it to EXPIRED.
+    final List<dynamic> data = await _client
+        .from('charger_promotions')
+        .select()
+        .eq('charger_id', chargerId)
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false);
 
     return data
         .map(
@@ -234,14 +237,18 @@ class ChargerSupabaseService implements ChargerService {
 
   @override
   Future<List<ChargerPromotion>> getActivePromotions(String chargerId) async {
-    // Delegates to the `get-active-promotions` edge function, which runs the
-    // same expiry sweep and returns only ACTIVE, non-deleted promotions.
-    final response = await _client.functions.invoke(
-      'get-active-promotions',
-      body: {'charger_id': chargerId},
-    );
-
-    final data = (response.data?['promotions'] as List<dynamic>?) ?? [];
+    // Queries `charger_promotions` directly for rows that are ACTIVE and
+    // not soft-deleted, most recent first. Note this does not run the
+    // expiry sweep the `get-active-promotions` edge function used to do,
+    // so a promotion whose `valid_until` has lapsed stays ACTIVE here until
+    // something else (e.g. updatePromotionStatus) flips its status.
+    final List<dynamic> data = await _client
+        .from('charger_promotions')
+        .select()
+        .eq('charger_id', chargerId)
+        .eq('status', 'ACTIVE')
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false);
 
     return data
         .map(

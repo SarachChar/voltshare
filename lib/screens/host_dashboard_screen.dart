@@ -965,11 +965,24 @@ class _CreatePromotionSheetState extends State<_CreatePromotionSheet> {
 
     setState(() => _isSaving = true);
     try {
+      // The date picker returns midnight of the chosen day; push validUntil
+      // to the last instant of that day so the promotion stays valid for
+      // the whole day the host picked, not just until 00:00.
+      final until = _validUntil!;
+      final validUntilEndOfDay = DateTime(
+        until.year,
+        until.month,
+        until.day,
+        23,
+        59,
+        59,
+      );
+
       final created = await widget.onSubmit(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         validFrom: _validFrom,
-        validUntil: _validUntil,
+        validUntil: validUntilEndOfDay,
         active: _active,
         termsAndConditions: _termsController.text.trim(),
       );

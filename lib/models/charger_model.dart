@@ -320,10 +320,13 @@ class ChargerPromotion {
     );
   }
 
+  /// Parses a DB timestamp (stored as UTC) into local device time, so
+  /// [validRangeLabel]/[formatDate] show Thailand time (UTC+7) instead of
+  /// the raw UTC value from Postgres.
   static DateTime? _parseDate(dynamic value) {
     if (value == null) return null;
-    if (value is DateTime) return value;
-    return DateTime.tryParse(value.toString());
+    if (value is DateTime) return value.toLocal();
+    return DateTime.tryParse(value.toString())?.toLocal();
   }
 
   bool get isActive => status.toLowerCase() == 'active';
