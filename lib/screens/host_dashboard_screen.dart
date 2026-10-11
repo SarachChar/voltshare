@@ -28,9 +28,14 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
 
   late Future<List<Charger>> _chargersFuture;
 
-  /// Local on/off state for each charger's toggle, keyed by charger id.
-  /// No backend action is wired up yet; this only drives the UI.
+  /// On/off state for each charger's toggle, keyed by charger id. Seeded from
+  /// the charger's `status` and updated optimistically when the host flips a
+  /// switch (the change is persisted via the controller).
   final Map<String, bool> _activeById = {};
+
+  /// Charger ids whose status update is currently in flight. Their switch is
+  /// disabled until the request settles to avoid overlapping toggles.
+  final Set<String> _togglingStatus = {};
 
   /// Which charger cards have their promotions panel expanded.
   final Set<String> _expandedPromotions = {};
@@ -269,6 +274,20 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
     }
   }
 
+  Future<void> _openEditCharger(Charger charger) async {
+    final saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AddChargerScreen(initialCharger: charger),
+      ),
+    );
+    // Edits were saved — reload the list so the card reflects them.
+    if (saved == true && mounted) {
+      setState(() {
+        _chargersFuture = _loadChargers();
+      });
+    }
+  }
+
   Widget _buildAddChargerButton() {
     return Container(
       height: 64,
@@ -367,7 +386,7 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
                 const Padding(padding: EdgeInsets.only(top: 12)),
                 Row(
                   children: [
-                    Expanded(child: _buildEditButton()),
+                    Expanded(child: _buildEditButton(charger)),
                     const Padding(padding: EdgeInsets.only(left: 10)),
                     Expanded(
                       child: _buildPromotionsButton(charger.id, expanded),
@@ -403,10 +422,40 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
       value: isActive,
       activeThumbColor: Colors.white,
       activeTrackColor: _primary,
-      onChanged: (value) {
-        setState(() => _activeById[chargerId] = value);
-      },
+      onChanged: _togglingStatus.contains(chargerId)
+          ? null
+          : (value) => _toggleChargerStatus(chargerId, value),
     );
+  }
+
+  /// Flips a charger's availability status in the backend. [isActive] true
+  /// means the switch was turned on → status 'available'; false → 'unavailable'.
+  ///
+  /// The UI is updated optimistically so the switch moves immediately, then
+  /// rolled back if the update fails.
+  Future<void> _toggleChargerStatus(String chargerId, bool isActive) async {
+    setState(() {
+      _activeById[chargerId] = isActive;
+      _togglingStatus.add(chargerId);
+    });
+
+    try {
+      await _controller.updateChargerStatus(
+        chargerId: chargerId,
+        status: isActive ? 'available' : 'unavailable',
+      );
+    } catch (error) {
+      // Roll the switch back to its previous position and let the host know.
+      if (!mounted) return;
+      setState(() => _activeById[chargerId] = !isActive);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update charger status: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _togglingStatus.remove(chargerId));
+      }
+    }
   }
 
   Widget _buildMetric(String label, String value) {
@@ -444,9 +493,9 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
     );
   }
 
-  Widget _buildEditButton() {
+  Widget _buildEditButton(Charger charger) {
     return OutlinedButton.icon(
-      onPressed: () {},
+      onPressed: () => _openEditCharger(charger),
       style: OutlinedButton.styleFrom(
         foregroundColor: _dark,
         side: const BorderSide(color: Color(0xFFE5E7EB)),

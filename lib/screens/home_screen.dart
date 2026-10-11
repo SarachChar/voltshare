@@ -313,53 +313,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-        // Floating search bar (with filter) at the top.
-        Align(
-          alignment: Alignment.topCenter,
-          child: SafeArea(
-            bottom: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Padding(padding: EdgeInsets.only(top: 8)),
-                _buildSearchBar(),
-              ],
-            ),
-          ),
-        ),
-
         // Draggable Nearby Chargers sheet.
         _buildNearbySheet(),
       ],
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.search, color: Colors.grey.shade500),
-            const Padding(padding: EdgeInsets.only(left: 10)),
-            Expanded(
-              child: TextField(
-                decoration: InputDecoration(
-                  hintText: 'Search chargers near you...',
-                  hintStyle: TextStyle(color: Colors.grey.shade500),
-                  border: InputBorder.none,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

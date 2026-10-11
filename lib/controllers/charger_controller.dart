@@ -124,6 +124,44 @@ class ChargerController {
     );
   }
 
+  /// Updates an existing charger row and returns the saved charger.
+  Future<Charger> updateCharger({
+    required String chargerId,
+    required String name,
+    String description = '',
+    String address = '',
+    double latitude = 0.0,
+    double longitude = 0.0,
+    String chargerType = '',
+    String connectorType = '',
+    double powerKw = 0.0,
+    double pricePerKwh = 0.0,
+  }) {
+    return service.updateCharger(
+      chargerId: chargerId,
+      name: name,
+      description: description,
+      address: address,
+      latitude: latitude,
+      longitude: longitude,
+      chargerType: chargerType,
+      connectorType: connectorType,
+      powerKw: powerKw,
+      pricePerKwh: pricePerKwh,
+    );
+  }
+
+  /// Updates only a charger's availability status and returns the saved row.
+  Future<Charger> updateChargerStatus({
+    required String chargerId,
+    required String status,
+  }) {
+    return service.updateChargerStatus(
+      chargerId: chargerId,
+      status: status,
+    );
+  }
+
   /// Links an uploaded image path to a charger in `charger_images`.
   Future<ChargerImage> insertChargerImage({
     required String chargerId,
@@ -134,6 +172,38 @@ class ChargerController {
       chargerId: chargerId,
       imagePath: imagePath,
       displayOrder: displayOrder,
+    );
+  }
+
+  /// Removes a charger image row (used when editing).
+  Future<void> deleteChargerImage(String imageId) {
+    return service.deleteChargerImage(imageId);
+  }
+
+  /// Removes a business image row (used when editing).
+  Future<void> deleteBusinessImage(String imageId) {
+    return service.deleteBusinessImage(imageId);
+  }
+
+  /// Replaces a charger's weekly availability with [days].
+  Future<void> replaceChargerAvailability({
+    required String chargerId,
+    required List<ChargerAvailability> days,
+  }) {
+    return service.replaceChargerAvailability(
+      chargerId: chargerId,
+      days: days,
+    );
+  }
+
+  /// Replaces a charger's businesses with [businesses].
+  Future<void> replaceChargerBusinesses({
+    required String chargerId,
+    required List<ChargerBusiness> businesses,
+  }) {
+    return service.replaceChargerBusinesses(
+      chargerId: chargerId,
+      businesses: businesses,
     );
   }
 

@@ -14,17 +14,23 @@ import 'package:voltshare_app/services/charger_service.dart';
 /// the dashboard. The flow is split into four steps: Info, Pricing, Business
 /// and Hours (opening/closing times).
 ///
-/// For now the first step (Info) captures the charger name and a set of photos.
-/// Photos are only picked and previewed locally while the host fills in the
-/// form; the actual upload to Supabase Storage happens when they tap
-/// "Request to list my charger" on the final step. The remaining steps are
-/// placeholders and the rest of the fields are not wired up yet.
+/// The same screen doubles as the "Edit Charger" flow: when an [initialCharger]
+/// is passed in, every step is pre-filled with that charger's current data and
+/// the final step's button becomes "Save", which updates the listing instead of
+/// creating a new one. Photos are picked and previewed locally; uploads to
+/// Supabase Storage (and, in edit mode, deletions of removed photos) happen when
+/// the host confirms on the final step.
 class AddChargerScreen extends StatefulWidget {
-  const AddChargerScreen({super.key, this.controller});
+  const AddChargerScreen({super.key, this.controller, this.initialCharger});
 
   /// Optional injected controller (useful for tests). Falls back to a default
   /// Supabase-backed controller when not provided.
   final ChargerController? controller;
+
+  /// When provided, the screen runs in "edit" mode: the same four-step flow is
+  /// shown pre-filled with this charger's current data, and the final step
+  /// saves the edits (via update) instead of creating a new charger.
+  final Charger? initialCharger;
 
   @override
   State<AddChargerScreen> createState() => _AddChargerScreenState();
@@ -48,14 +54,33 @@ extension _AddChargerStepLabel on _AddChargerStep {
   }
 }
 
-/// A photo the host selected but hasn't uploaded yet. Holds the in-memory bytes
-/// (used for both the preview and the eventual upload) plus the original file
-/// extension so we can name the uploaded object correctly.
+/// A photo shown in the Info/Business steps.
+///
+/// Two flavours:
+///  - A *new* pick: holds in-memory [bytes] + [fileExtension], uploaded on save.
+///  - An *existing* image (edit mode): holds the already-stored [existingId]
+///    and public [existingUrl] so it can be previewed from the network and,
+///    if the host removes it, deleted by id. Existing photos have no [bytes].
 class _PickedPhoto {
-  _PickedPhoto({required this.bytes, required this.fileExtension});
+  _PickedPhoto({
+    this.bytes,
+    this.fileExtension = 'jpg',
+    this.existingId,
+    this.existingUrl,
+  });
 
-  final Uint8List bytes;
+  /// In-memory bytes for a freshly picked photo. Null for existing photos.
+  final Uint8List? bytes;
   final String fileExtension;
+
+  /// DB row id of an already-uploaded image (edit mode). Null for new picks.
+  final String? existingId;
+
+  /// Public URL of an already-uploaded image, used for the preview.
+  final String? existingUrl;
+
+  /// Whether this entry represents an already-uploaded image.
+  bool get isExisting => existingId != null;
 }
 
 /// A business the host has added in the Business step but hasn't saved yet.
@@ -108,6 +133,15 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
 
   late final ChargerController _controller =
       widget.controller ?? ChargerController(ChargerSupabaseService());
+
+  /// True when the screen was opened to edit an existing charger. Drives the
+  /// pre-filling, the header/button copy, and the save-vs-create branch.
+  bool get _isEditing => widget.initialCharger != null;
+
+  /// While editing, the related data (images/businesses/hours) is loaded
+  /// asynchronously. This gates the Save button until it's ready so edits
+  /// aren't saved against a half-loaded form.
+  bool _isLoadingExisting = false;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -187,7 +221,13 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
   String _connectorType = 'Type 2';
 
   /// Photos picked so far, in the order they should be displayed/uploaded.
+  /// In edit mode this is pre-filled with the charger's existing images.
   final List<_PickedPhoto> _photos = [];
+
+  /// DB ids of existing charger/business images the host removed while editing.
+  /// These rows are deleted on save. New picks never appear here.
+  final List<String> _removedChargerImageIds = [];
+  final List<String> _removedBusinessImageIds = [];
 
   /// True while the finish action is uploading, so the button shows a spinner
   /// and can't be tapped twice.
@@ -204,6 +244,129 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
   /// True once the host has confirmed a location in the picker, so we only
   /// show "Location selected" when it's meaningful.
   bool _locationTouched = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isEditing) {
+      _prefillFromCharger(widget.initialCharger!);
+      _loadExistingDetails(widget.initialCharger!);
+    }
+  }
+
+  /// Seeds the simple scalar fields from the charger being edited. The related
+  /// data (photos, businesses, hours) is loaded separately in
+  /// [_loadExistingDetails] since it lives in other tables.
+  void _prefillFromCharger(Charger charger) {
+    _nameController.text = charger.name;
+    _addressController.text = charger.address;
+    _descriptionController.text = charger.description;
+    _powerController.text = _trimNumber(charger.powerKw);
+    _priceController.text = charger.pricePerKwh.toStringAsFixed(2);
+
+    if (_chargerTypes.contains(charger.chargerType)) {
+      _chargerType = charger.chargerType;
+    }
+    if (_connectorTypes.contains(charger.connectorType)) {
+      _connectorType = charger.connectorType;
+    }
+
+    // Treat a stored location as a real pin only when it isn't the (0,0)
+    // placeholder, so the Info step shows "Location selected".
+    if (charger.latitude != 0.0 || charger.longitude != 0.0) {
+      _pinLocation = LatLng(charger.latitude, charger.longitude);
+      _locationTouched = true;
+    }
+  }
+
+  /// Loads the charger's images, businesses and weekly hours so each step
+  /// shows the current values. Runs once when editing.
+  Future<void> _loadExistingDetails(Charger charger) async {
+    setState(() => _isLoadingExisting = true);
+    try {
+      final results = await Future.wait([
+        _controller.fetchChargerImages(charger.id),
+        _controller.fetchBusinessImages(charger.id),
+        _controller.fetchChargerBusinesses(charger.id),
+        _controller.fetchChargerAvailability(charger.id),
+      ]);
+
+      if (!mounted) return;
+
+      final images = results[0] as List<ChargerImage>;
+      final businessImages = results[1] as List<BusinessImage>;
+      final businesses = results[2] as List<ChargerBusiness>;
+      final availability = results[3] as List<ChargerAvailability>;
+
+      setState(() {
+        _photos
+          ..clear()
+          ..addAll(images.map(
+            (img) => _PickedPhoto(existingId: img.id, existingUrl: img.imageUrl),
+          ));
+
+        _businessPhotos
+          ..clear()
+          ..addAll(businessImages.map(
+            (img) => _PickedPhoto(existingId: img.id, existingUrl: img.imageUrl),
+          ));
+
+        _draftBusinesses
+          ..clear()
+          ..addAll(businesses.map(
+            (b) => _DraftBusiness(
+              typeValue: b.businessType,
+              name: b.businessName,
+              description: b.description,
+            ),
+          ));
+
+        _applyAvailability(availability);
+      });
+    } catch (error, stackTrace) {
+      debugPrint('loadExistingDetails failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load current charger data: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoadingExisting = false);
+    }
+  }
+
+  /// Maps the loaded availability rows onto the Hours-step [_days]. Days with
+  /// no row (or an explicitly unavailable row) are shown as closed; open days
+  /// pick up their stored start/end times.
+  void _applyAvailability(List<ChargerAvailability> rows) {
+    final byDay = <int, ChargerAvailability>{};
+    for (final row in rows) {
+      byDay.putIfAbsent(row.dayOfWeek, () => row);
+    }
+    for (final day in _days) {
+      final row = byDay[day.dayOfWeek];
+      if (row == null || row.isClosed) {
+        day.isOpen = false;
+        continue;
+      }
+      day.isOpen = true;
+      final start = _parseDbTime(row.startTime);
+      final end = _parseDbTime(row.endTime);
+      if (start != null) day.start = start;
+      if (end != null) day.end = end;
+    }
+  }
+
+  /// Parses a Postgres `time` value ("HH:mm" or "HH:mm:ss") into a [TimeOfDay].
+  /// Returns null when it can't be parsed, so the default time is kept.
+  static TimeOfDay? _parseDbTime(String value) {
+    final parts = value.split(':');
+    if (parts.length < 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
 
   @override
   void dispose() {
@@ -239,6 +402,13 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
   }
 
   bool get _isLastStep => _currentStep == _steps.length - 1;
+
+  /// Label for the bottom bar's primary button. On the last step this is
+  /// "Save" when editing and "Request to list my charger" when creating.
+  String get _continueButtonLabel {
+    if (!_isLastStep) return 'Continue →';
+    return _isEditing ? 'Save' : 'Request to list my charger';
+  }
 
   Future<void> _onContinue() async {
     if (_isSubmitting) return;
@@ -278,6 +448,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
             fileExtension: _extensionOf(file.name),
           ),
         );
+        // _PickedPhoto with bytes = a new pick (not an existing image).
       }
 
       if (!mounted) return;
@@ -295,7 +466,21 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
   }
 
   void _removePhoto(int index) {
-    setState(() => _photos.removeAt(index));
+    setState(() {
+      final removed = _photos.removeAt(index);
+      if (removed.isExisting) {
+        _removedChargerImageIds.add(removed.existingId!);
+      }
+    });
+  }
+
+  void _removeBusinessPhoto(int index) {
+    setState(() {
+      final removed = _businessPhotos.removeAt(index);
+      if (removed.isExisting) {
+        _removedBusinessImageIds.add(removed.existingId!);
+      }
+    });
   }
 
   static String _extensionOf(String name) {
@@ -315,15 +500,19 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
         ),
-        title: const Text(
-          'Submit this charger?',
-          style: TextStyle(fontWeight: FontWeight.w800, color: _dark),
+        title: Text(
+          _isEditing ? 'Save changes?' : 'Submit this charger?',
+          style: const TextStyle(fontWeight: FontWeight.w800, color: _dark),
         ),
-        content: const Text(
-          "Once submitted, your charger details can't be edited. "
-          'Please double-check the photos, location, pricing, hours and '
-          'business info before continuing.',
-          style: TextStyle(fontSize: 15, height: 1.5, color: _muted),
+        content: Text(
+          _isEditing
+              ? 'This will update your charger listing with the changes '
+                  "you've made. Please double-check the photos, location, "
+                  'pricing, hours and business info before saving.'
+              : "Once submitted, your charger details can't be edited. "
+                  'Please double-check the photos, location, pricing, hours '
+                  'and business info before continuing.',
+          style: const TextStyle(fontSize: 15, height: 1.5, color: _muted),
         ),
         actions: [
           TextButton(
@@ -345,9 +534,9 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
-              'Submit',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+            child: Text(
+              _isEditing ? 'Save' : 'Submit',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -392,111 +581,213 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
       return;
     }
 
-    // Everything validates — get an explicit confirmation before saving, since
-    // the listing can't be edited afterwards.
+    // Everything validates — get an explicit confirmation before saving.
     final confirmed = await _confirmSubmission();
     if (confirmed != true || !mounted) return;
 
     setState(() => _isSubmitting = true);
 
     try {
-      // 1. Create the charger row. Fields that aren't captured yet get mock
-      //    placeholder values for now — later steps will replace these.
-      final charger = await _controller.createCharger(
-        hostId: hostId,
-        name: name,
-        description: _descriptionController.text.trim(),
-        address: _addressController.text.trim(),
-        latitude: _pinLocation.latitude,
-        longitude: _pinLocation.longitude,
-        chargerType: _chargerType,
-        connectorType: _connectorType,
-        powerKw: double.tryParse(_powerController.text.trim()) ?? 0.0,
-        pricePerKwh: double.tryParse(_priceController.text.trim()) ?? 0.0,
-        status: 'available',
-      );
-
-      // 2. Upload each photo into the charger's folder, then link it in
-      //    charger_images at the matching display order. Files live under
-      //    `charger/<charger_id>/<n>.<ext>` and are numbered from 1 to match
-      //    the existing bucket layout.
-      for (var i = 0; i < _photos.length; i++) {
-        final photo = _photos[i];
-        final path = await _controller.uploadChargerImage(
-          folder: 'charger/${charger.id}',
-          index: i + 1,
-          bytes: photo.bytes,
-          fileExtension: photo.fileExtension,
-        );
-        await _controller.insertChargerImage(
-          chargerId: charger.id,
-          imagePath: path,
-          displayOrder: i,
-        );
-      }
-
-      // 3. Save the weekly opening hours (one row per day). Open days use the
-      //    host's chosen times; closed days are stored with is_available=false
-      //    and fall back to the default 07:00–22:00 range.
-      await _controller.insertChargerAvailability(
-        chargerId: charger.id,
-        days: _days.map((day) {
-          final start = day.isOpen ? day.start : _defaultStart;
-          final end = day.isOpen ? day.end : _defaultEnd;
-          return ChargerAvailability(
-            id: '',
-            chargerId: charger.id,
-            dayOfWeek: day.dayOfWeek,
-            startTime: _formatTimeForDb(start),
-            endTime: _formatTimeForDb(end),
-            isAvailable: day.isOpen,
-          );
-        }).toList(),
-      );
-
-      // 4. Save the businesses offered at this charger (optional step).
-      for (final business in _draftBusinesses) {
-        await _controller.insertChargerBusiness(
-          chargerId: charger.id,
-          businessType: business.typeValue,
-          businessName: business.name,
-          description: business.description,
-        );
-      }
-
-      // 5. Upload the shared business location photos into
-      //    `business/<charger_id>/` and link them in business_images.
-      for (var i = 0; i < _businessPhotos.length; i++) {
-        final photo = _businessPhotos[i];
-        final path = await _controller.uploadChargerImage(
-          folder: 'business/${charger.id}',
-          index: i + 1,
-          bytes: photo.bytes,
-          fileExtension: photo.fileExtension,
-        );
-        await _controller.insertBusinessImage(
-          chargerId: charger.id,
-          imagePath: path,
-          displayOrder: i,
-        );
+      if (_isEditing) {
+        await _runEdit(widget.initialCharger!.id, name);
+      } else {
+        await _runCreate(hostId, name);
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Charger created.')),
+        SnackBar(
+          content: Text(_isEditing ? 'Charger updated.' : 'Charger created.'),
+        ),
       );
       Navigator.of(context).pop(true);
     } catch (error, stackTrace) {
-      // Surface the real error so the failing step (charger insert, storage
-      // upload, or charger_images insert) can be identified.
-      debugPrint('createCharger flow failed: $error');
+      // Surface the real error so the failing step (charger insert/update,
+      // storage upload, or child-table write) can be identified.
+      debugPrint('${_isEditing ? 'updateCharger' : 'createCharger'} '
+          'flow failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to create charger: $error')),
+        SnackBar(
+          content: Text(
+            'Failed to ${_isEditing ? 'update' : 'create'} charger: $error',
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  /// Builds the weekly availability rows from the Hours step for [chargerId].
+  /// Closed days are stored unavailable with the default 07:00–22:00 range.
+  List<ChargerAvailability> _availabilityRows(String chargerId) {
+    return _days.map((day) {
+      final start = day.isOpen ? day.start : _defaultStart;
+      final end = day.isOpen ? day.end : _defaultEnd;
+      return ChargerAvailability(
+        id: '',
+        chargerId: chargerId,
+        dayOfWeek: day.dayOfWeek,
+        startTime: _formatTimeForDb(start),
+        endTime: _formatTimeForDb(end),
+        isAvailable: day.isOpen,
+      );
+    }).toList();
+  }
+
+  /// The full create flow: insert the charger, then its images, hours,
+  /// businesses and business photos.
+  Future<void> _runCreate(String hostId, String name) async {
+    // 1. Create the charger row.
+    final charger = await _controller.createCharger(
+      hostId: hostId,
+      name: name,
+      description: _descriptionController.text.trim(),
+      address: _addressController.text.trim(),
+      latitude: _pinLocation.latitude,
+      longitude: _pinLocation.longitude,
+      chargerType: _chargerType,
+      connectorType: _connectorType,
+      powerKw: double.tryParse(_powerController.text.trim()) ?? 0.0,
+      pricePerKwh: double.tryParse(_priceController.text.trim()) ?? 0.0,
+      status: 'available',
+    );
+
+    // 2. Upload each photo into the charger's folder, then link it in
+    //    charger_images. Uses the same time-based file naming as edits.
+    await _uploadNewPhotos(
+      photos: _photos,
+      folder: 'charger/${charger.id}',
+      link: (path, order) => _controller.insertChargerImage(
+        chargerId: charger.id,
+        imagePath: path,
+        displayOrder: order,
+      ),
+    );
+
+    // 3. Save the weekly opening hours.
+    await _controller.insertChargerAvailability(
+      chargerId: charger.id,
+      days: _availabilityRows(charger.id),
+    );
+
+    // 4. Save the businesses offered at this charger (optional step).
+    for (final business in _draftBusinesses) {
+      await _controller.insertChargerBusiness(
+        chargerId: charger.id,
+        businessType: business.typeValue,
+        businessName: business.name,
+        description: business.description,
+      );
+    }
+
+    // 5. Upload the shared business location photos.
+    await _uploadNewPhotos(
+      photos: _businessPhotos,
+      folder: 'business/${charger.id}',
+      link: (path, order) => _controller.insertBusinessImage(
+        chargerId: charger.id,
+        imagePath: path,
+        displayOrder: order,
+      ),
+    );
+  }
+
+  /// The full edit flow for [chargerId]: update the charger row, reconcile its
+  /// photos (delete removed, upload new, keep untouched), and replace its
+  /// hours and businesses with the edited sets.
+  Future<void> _runEdit(String chargerId, String name) async {
+    // 1. Update the scalar charger fields.
+    await _controller.updateCharger(
+      chargerId: chargerId,
+      name: name,
+      description: _descriptionController.text.trim(),
+      address: _addressController.text.trim(),
+      latitude: _pinLocation.latitude,
+      longitude: _pinLocation.longitude,
+      chargerType: _chargerType,
+      connectorType: _connectorType,
+      powerKw: double.tryParse(_powerController.text.trim()) ?? 0.0,
+      pricePerKwh: double.tryParse(_priceController.text.trim()) ?? 0.0,
+    );
+
+    // 2. Charger photos: remove the ones the host deleted, then upload any
+    //    newly added ones. Untouched existing photos are left as-is. New files
+    //    use a timestamp-based index so they never collide with existing
+    //    objects already stored under `charger/<id>/<n>.<ext>`.
+    for (final imageId in _removedChargerImageIds) {
+      await _controller.deleteChargerImage(imageId);
+    }
+    await _uploadNewPhotos(
+      photos: _photos,
+      folder: 'charger/$chargerId',
+      link: (path, order) => _controller.insertChargerImage(
+        chargerId: chargerId,
+        imagePath: path,
+        displayOrder: order,
+      ),
+    );
+
+    // 3. Replace the weekly opening hours with the edited week.
+    await _controller.replaceChargerAvailability(
+      chargerId: chargerId,
+      days: _availabilityRows(chargerId),
+    );
+
+    // 4. Replace the businesses with the edited set.
+    await _controller.replaceChargerBusinesses(
+      chargerId: chargerId,
+      businesses: _draftBusinesses
+          .map(
+            (b) => ChargerBusiness(
+              id: '',
+              chargerId: chargerId,
+              businessType: b.typeValue,
+              businessName: b.name,
+              description: b.description,
+            ),
+          )
+          .toList(),
+    );
+
+    // 5. Business photos: same reconcile as the charger photos.
+    for (final imageId in _removedBusinessImageIds) {
+      await _controller.deleteBusinessImage(imageId);
+    }
+    await _uploadNewPhotos(
+      photos: _businessPhotos,
+      folder: 'business/$chargerId',
+      link: (path, order) => _controller.insertBusinessImage(
+        chargerId: chargerId,
+        imagePath: path,
+        displayOrder: order,
+      ),
+    );
+  }
+
+  /// Uploads the newly-picked photos in [photos] (existing ones are skipped),
+  /// linking each via [link]. Used by both the create and edit flows, so file
+  /// names are always time-based ([DateTime.now] millis + list offset) to avoid
+  /// colliding with any files already in [folder]. [displayOrder] passed to
+  /// [link] is the photo's position in the list, preserving order.
+  Future<void> _uploadNewPhotos({
+    required List<_PickedPhoto> photos,
+    required String folder,
+    required Future<void> Function(String path, int displayOrder) link,
+  }) async {
+    final baseIndex = DateTime.now().millisecondsSinceEpoch;
+    for (var i = 0; i < photos.length; i++) {
+      final photo = photos[i];
+      if (photo.isExisting) continue;
+      final path = await _controller.uploadChargerImage(
+        folder: folder,
+        index: baseIndex + i,
+        bytes: photo.bytes!,
+        fileExtension: photo.fileExtension,
+      );
+      await link(path, i);
     }
   }
 
@@ -552,18 +843,13 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
                 ),
               ),
               const Padding(padding: EdgeInsets.only(top: 16)),
-              const Text(
-                'Submitting your charger',
-                style: TextStyle(
+              Text(
+                _isEditing ? 'Saving your changes' : 'Submitting your charger',
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                   color: _dark,
                 ),
-              ),
-              const Padding(padding: EdgeInsets.only(top: 6)),
-              const Text(
-                'Uploading photos — please wait.',
-                style: TextStyle(fontSize: 14, color: _muted),
               ),
             ],
           ),
@@ -588,9 +874,9 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Add Charger',
-                    style: TextStyle(
+                  Text(
+                    _isEditing ? 'Edit Charger' : 'Add Charger',
+                    style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w800,
                       color: _dark,
@@ -972,6 +1258,33 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
     );
   }
 
+  /// A 56x56 thumbnail for a photo entry: a network image for an existing
+  /// (already-uploaded) photo, otherwise the in-memory bytes.
+  Widget _buildPhotoThumb(_PickedPhoto photo) {
+    const double size = 56;
+    if (photo.isExisting) {
+      return Image.network(
+        photo.existingUrl ?? '',
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stack) => Container(
+          width: size,
+          height: size,
+          color: const Color(0xFFF3F4F6),
+          alignment: Alignment.center,
+          child: const Icon(Icons.broken_image_outlined, color: _muted),
+        ),
+      );
+    }
+    return Image.memory(
+      photo.bytes!,
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+    );
+  }
+
   Widget _buildPhotoPreview(int index) {
     final photo = _photos[index];
     return Container(
@@ -985,12 +1298,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: Image.memory(
-              photo.bytes,
-              width: 56,
-              height: 56,
-              fit: BoxFit.cover,
-            ),
+            child: _buildPhotoThumb(photo),
           ),
           const Padding(padding: EdgeInsets.only(left: 12)),
           Expanded(
@@ -1521,12 +1829,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: Image.memory(
-              photo.bytes,
-              width: 56,
-              height: 56,
-              fit: BoxFit.cover,
-            ),
+            child: _buildPhotoThumb(photo),
           ),
           const Padding(padding: EdgeInsets.only(left: 12)),
           Expanded(
@@ -1544,9 +1847,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
             borderRadius: BorderRadius.circular(10),
             child: InkWell(
               borderRadius: BorderRadius.circular(10),
-              onTap: _isSubmitting
-                  ? null
-                  : () => setState(() => _businessPhotos.removeAt(index)),
+              onTap: _isSubmitting ? null : () => _removeBusinessPhoto(index),
               child: Container(
                 width: 40,
                 height: 40,
@@ -1896,7 +2197,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         height: 56,
         width: double.infinity,
         child: ElevatedButton(
-          onPressed: _isSubmitting ? null : _onContinue,
+          onPressed: (_isSubmitting || _isLoadingExisting) ? null : _onContinue,
           style: ElevatedButton.styleFrom(
             backgroundColor: _primary,
             foregroundColor: Colors.white,
@@ -1918,7 +2219,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
                   ),
                 )
               : Text(
-                  _isLastStep ? 'Request to list my charger' : 'Continue →',
+                  _continueButtonLabel,
                   style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
