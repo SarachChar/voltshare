@@ -107,6 +107,12 @@ class _SearchScreenState extends State<SearchScreen> {
 
   /// Best-effort device location. Never prompts aggressively or throws — if
   /// permission is denied or location is off, we keep the Bangkok fallback.
+  ///
+  /// On a physical device the first GPS fix can be slow, so we bound
+  /// [Geolocator.getCurrentPosition] with a timeout and fall back to the last
+  /// known position if it fails. Whenever we obtain a real position we re-run
+  /// the search unconditionally — the first search already ran against the
+  /// Bangkok fallback, so comparing against it is not a reliable signal.
   Future<void> _resolveUserLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return;
@@ -120,16 +126,28 @@ class _SearchScreenState extends State<SearchScreen> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition();
-      if (!mounted) return;
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+      } catch (_) {
+        // First fix timed out or failed (common on a cold-started physical
+        // device). Fall back to the last known fix if the OS has one cached.
+        position = await Geolocator.getLastKnownPosition();
+      }
 
-      final moved =
-          position.latitude != _userLat || position.longitude != _userLng;
+      if (!mounted || position == null) return;
+
       _userLat = position.latitude;
       _userLng = position.longitude;
 
-      // Re-run so distances/order reflect the real location.
-      if (moved) _runSearch(reset: true);
+      // Re-run so distances/order reflect the real location, replacing the
+      // results that were fetched against the Bangkok fallback.
+      _runSearch(reset: true);
     } catch (_) {
       // Keep the fallback location silently.
     }
@@ -412,13 +430,13 @@ class _SearchScreenState extends State<SearchScreen> {
           final chargerIndex = index - 1;
           if (chargerIndex >= _chargers.length) {
             // Bottom loader slot.
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
               child: Center(
-                child: SizedBox(
+                child: Container(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(
+                  child: const CircularProgressIndicator(
                     strokeWidth: 2.5,
                     color: _primary,
                   ),
@@ -738,7 +756,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         },
                       ),
                     ),
-                    SizedBox(
+                    Container(
                       height: 52,
                       child: ElevatedButton(
                         onPressed: () => Navigator.of(sheetContext).pop(true),

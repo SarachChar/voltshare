@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:voltshare_app/components/map_navigation.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/screens/photo_viewer_screen.dart';
@@ -1185,31 +1186,41 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
     return value[0].toUpperCase() + value.substring(1);
   }
 
-  /// Bottom bar with the "Book This Charger" button. Not wired up yet.
+  /// Bottom bar with a small "navigate" button (left) and the "Book This
+  /// Charger" button. Booking is not wired up yet.
   Widget _buildBookBar() {
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-      child: Container(
-        height: 56,
-        child: ElevatedButton(
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Booking coming soon.')),
-            );
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _primary,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(28),
+      child: Row(
+        children: [
+          // Navigate button — opens an external map app for directions.
+          NavigateButton(charger: widget.charger, size: 56),
+          const Padding(padding: EdgeInsets.only(left: 12)),
+          Expanded(
+            child: Container(
+              height: 56,
+              child: ElevatedButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Booking coming soon.')),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                ),
+                child: const Text(
+                  'Book This Charger',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+              ),
             ),
           ),
-          child: const Text(
-            'Book This Charger',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
-        ),
+        ],
       ),
     );
   }
