@@ -13,6 +13,11 @@ class Charger {
   String status;
   DateTime? createdAt;
 
+  /// Great-circle distance in metres from the user's location to this charger.
+  /// Only populated by the search RPC (`search_chargers`), which returns a
+  /// `distance_m` column; null for chargers loaded through other queries.
+  double? distanceMeters;
+
   Charger(
     this.id,
     this.name,
@@ -27,6 +32,7 @@ class Charger {
     this.description = '',
     this.address = '',
     this.createdAt,
+    this.distanceMeters,
   });
 
   factory Charger.fromJson(Map<String, dynamic> json) {
@@ -46,6 +52,7 @@ class Charger {
       createdAt: json['created_at'] == null
           ? null
           : DateTime.tryParse(json['created_at'] as String)?.toLocal(),
+      distanceMeters: (json['distance_m'] as num?)?.toDouble(),
     );
   }
 
@@ -79,6 +86,15 @@ class Charger {
     final parts = <String>[powerLabel];
     if (connectorType.isNotEmpty) parts.add(connectorType);
     return parts.join(' · ');
+  }
+
+  /// Human-readable distance from the user, e.g. "0.3 km" or "850 m". Returns
+  /// an empty string when [distanceMeters] is not set (not a search result).
+  String get distanceLabel {
+    final metres = distanceMeters;
+    if (metres == null) return '';
+    if (metres < 1000) return '${metres.round()} m';
+    return '${(metres / 1000).toStringAsFixed(1)} km';
   }
 }
 

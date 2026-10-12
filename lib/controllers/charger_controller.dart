@@ -19,6 +19,34 @@ class ChargerController {
     return chargers;
   }
 
+  /// Distance-sorted, paginated search for the Search screen. Forwards to
+  /// [ChargerService.searchChargers]; see that method for the filter semantics.
+  /// Does not update [chargers] or emit on [onSync] — the Search screen manages
+  /// its own paged list and loading state.
+  Future<List<Charger>> searchChargers({
+    required double userLat,
+    required double userLng,
+    String? query,
+    String? chargerType,
+    String? connectorType,
+    double? powerMin,
+    double? powerMax,
+    int limit = 20,
+    int offset = 0,
+  }) {
+    return service.searchChargers(
+      userLat: userLat,
+      userLng: userLng,
+      query: query,
+      chargerType: chargerType,
+      connectorType: connectorType,
+      powerMin: powerMin,
+      powerMax: powerMax,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
   /// Fetches the live chargers owned by [hostId] (status 'available' /
   /// 'unavailable'), most recent first.
   Future<List<Charger>> fetchChargersByHost(String hostId) async {

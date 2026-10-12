@@ -7,6 +7,7 @@ import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/screens/blank_screen.dart';
 import 'package:voltshare_app/screens/charger_detail_screen.dart';
 import 'package:voltshare_app/screens/profile_screen.dart';
+import 'package:voltshare_app/screens/search_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -268,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _navIndex,
         children: [
           _buildMapTab(),
-          const BlankPage(title: 'Search'),
+          SearchScreen(controller: _controller),
           const BlankPage(title: 'Bookings'),
           const ProfileScreen(),
         ],
@@ -804,7 +805,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               TextButton(
-                onPressed: () {},
+                onPressed: () => setState(() => _navIndex = 1),
                 child: const Text(
                   'See all',
                   style: TextStyle(

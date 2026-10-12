@@ -8,6 +8,28 @@ abstract class ChargerService {
   /// status 'available' — most recent first.
   Future<List<Charger>> getNearbyChargers();
 
+  /// Distance-sorted, paginated search for the Search screen, backed by the
+  /// `search_chargers` Postgres function. Returns up to [limit] available
+  /// chargers starting at [offset], nearest to ([userLat], [userLng]) first,
+  /// with each result's [Charger.distanceMeters] populated.
+  ///
+  /// All filters are optional:
+  ///   [query]          case-insensitive substring match on the charger name
+  ///   [chargerType]    'AC' | 'DC'
+  ///   [connectorType]  'CCS2' | 'Type 2' | 'CHAdeMO'
+  ///   [powerMin]/[powerMax]  power_kw range in kW, half-open [min, max)
+  Future<List<Charger>> searchChargers({
+    required double userLat,
+    required double userLng,
+    String? query,
+    String? chargerType,
+    String? connectorType,
+    double? powerMin,
+    double? powerMax,
+    int limit,
+    int offset,
+  });
+
   /// Returns the live chargers owned by [hostId] (the `host_id` column) —
   /// those with status 'available' or 'unavailable' — most recent first.
   Future<List<Charger>> getChargersByHost(String hostId);
@@ -188,6 +210,42 @@ class ChargerSupabaseService implements ChargerService {
         .select()
         .eq('status', 'available')
         .order('created_at', ascending: false);
+
+    return AllChargers.fromJson(data).chargers;
+  }
+
+  @override
+  Future<List<Charger>> searchChargers({
+    required double userLat,
+    required double userLng,
+    String? query,
+    String? chargerType,
+    String? connectorType,
+    double? powerMin,
+    double? powerMax,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    // Blank/whitespace-only queries are sent as null so the SQL skips the
+    // name filter entirely rather than matching on an empty string.
+    final trimmedQuery = query?.trim();
+
+    final List<dynamic> data = await _client.rpc(
+      'search_chargers',
+      params: {
+        'user_lat': userLat,
+        'user_lng': userLng,
+        'search_query': (trimmedQuery == null || trimmedQuery.isEmpty)
+            ? null
+            : trimmedQuery,
+        'charger_type_filter': chargerType,
+        'connector_type_filter': connectorType,
+        'power_min': powerMin,
+        'power_max': powerMax,
+        'page_limit': limit,
+        'page_offset': offset,
+      },
+    );
 
     return AllChargers.fromJson(data).chargers;
   }

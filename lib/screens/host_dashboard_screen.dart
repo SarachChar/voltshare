@@ -51,7 +51,24 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
   // Fixed mock header stats for now.
   static const String _totalEarned = '฿9,146';
   static const String _sessions = '59';
-  static const String _active = '1';
+
+  /// The host's loaded chargers (status 'available' / 'unavailable'), kept in
+  /// state so the header's "ACTIVE" stat can be derived from them. Populated
+  /// when the My Chargers tab finishes loading.
+  List<Charger> _myChargers = const <Charger>[];
+
+  /// Number of currently-active chargers, shown in the header. A charger counts
+  /// as active when its effective status is 'available' — taking into account
+  /// any in-session toggle override in [_activeById] so flipping a switch
+  /// updates the stat immediately.
+  String get _active {
+    final count = _myChargers.where((charger) {
+      final overridden = _activeById[charger.id];
+      final isActive = overridden ?? (charger.status != 'unavailable');
+      return isActive;
+    }).length;
+    return '$count';
+  }
 
   @override
   void initState() {
@@ -62,12 +79,52 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
 
   Future<List<Charger>> _loadChargers() {
     final hostId = Supabase.instance.client.auth.currentUser?.id ?? '';
-    return _controller.fetchChargersByHost(hostId);
+    final future = _controller.fetchChargersByHost(hostId);
+    // Cache the result in state so the header's "ACTIVE" stat can be derived
+    // from it. Done here (rather than in the FutureBuilder's builder) so we
+    // only setState after the load settles, not mid-build.
+    future.then((chargers) {
+      if (!mounted) return;
+      setState(() => _myChargers = chargers);
+    }).catchError((_) {
+      // Load errors are surfaced by the FutureBuilder; the stat just stays
+      // at its last known value.
+    });
+    return future;
   }
 
   Future<List<Charger>> _loadPendingChargers() {
     final hostId = Supabase.instance.client.auth.currentUser?.id ?? '';
     return _controller.fetchPendingChargersByHost(hostId);
+  }
+
+  /// Pull-to-refresh for the My Chargers tab. Starts a fresh load, points the
+  /// FutureBuilder at it, and awaits it so the refresh spinner stays until the
+  /// data settles. Also clears the per-charger toggle overrides so the
+  /// switches re-seed from the freshly loaded statuses.
+  Future<void> _refreshChargers() async {
+    final future = _loadChargers();
+    setState(() {
+      _chargersFuture = future;
+      _activeById.clear();
+    });
+    try {
+      await future;
+    } catch (_) {
+      // Errors surface through the FutureBuilder; swallow here so the
+      // RefreshIndicator just finishes.
+    }
+  }
+
+  /// Pull-to-refresh for the Pending tab. Mirrors [_refreshChargers].
+  Future<void> _refreshPendingChargers() async {
+    final future = _loadPendingChargers();
+    setState(() => _pendingChargersFuture = future);
+    try {
+      await future;
+    } catch (_) {
+      // Errors surface through the FutureBuilder.
+    }
   }
 
   @override
@@ -254,16 +311,21 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
         }
 
         final chargers = snapshot.data ?? const <Charger>[];
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildAddChargerButton(),
-            const Padding(padding: EdgeInsets.only(top: 16)),
-            for (final charger in chargers) ...[
-              _buildChargerCard(charger),
+        return RefreshIndicator(
+          color: _primary,
+          onRefresh: _refreshChargers,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            children: [
+              _buildAddChargerButton(),
               const Padding(padding: EdgeInsets.only(top: 16)),
+              for (final charger in chargers) ...[
+                _buildChargerCard(charger),
+                const Padding(padding: EdgeInsets.only(top: 16)),
+              ],
             ],
-          ],
+          ),
         );
       },
     );
@@ -293,21 +355,26 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
         }
 
         final chargers = snapshot.data ?? const <Charger>[];
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildApprovalBanner(),
-            const Padding(padding: EdgeInsets.only(top: 16)),
-            _buildApprovalStepsCard(),
-            const Padding(padding: EdgeInsets.only(top: 16)),
-            if (chargers.isEmpty)
-              _buildPendingEmpty()
-            else
-              for (final charger in chargers) ...[
-                _buildPendingCard(charger),
-                const Padding(padding: EdgeInsets.only(top: 16)),
-              ],
-          ],
+        return RefreshIndicator(
+          color: _primary,
+          onRefresh: _refreshPendingChargers,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            children: [
+              _buildApprovalBanner(),
+              const Padding(padding: EdgeInsets.only(top: 16)),
+              _buildApprovalStepsCard(),
+              const Padding(padding: EdgeInsets.only(top: 16)),
+              if (chargers.isEmpty)
+                _buildPendingEmpty()
+              else
+                for (final charger in chargers) ...[
+                  _buildPendingCard(charger),
+                  const Padding(padding: EdgeInsets.only(top: 16)),
+                ],
+            ],
+          ),
         );
       },
     );
