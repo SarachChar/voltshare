@@ -652,7 +652,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
       connectorType: _connectorType,
       powerKw: double.tryParse(_powerController.text.trim()) ?? 0.0,
       pricePerKwh: double.tryParse(_priceController.text.trim()) ?? 0.0,
-      status: 'available',
+      status: 'review',
     );
 
     // 2. Upload each photo into the charger's folder, then link it in

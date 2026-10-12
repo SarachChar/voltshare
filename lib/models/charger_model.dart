@@ -11,6 +11,7 @@ class Charger {
   double powerKw;
   double pricePerKwh;
   String status;
+  DateTime? createdAt;
 
   Charger(
     this.id,
@@ -25,6 +26,7 @@ class Charger {
     this.hostId = '',
     this.description = '',
     this.address = '',
+    this.createdAt,
   });
 
   factory Charger.fromJson(Map<String, dynamic> json) {
@@ -41,6 +43,9 @@ class Charger {
       hostId: json['host_id'] as String? ?? '',
       description: json['description'] as String? ?? '',
       address: json['address'] as String? ?? '',
+      createdAt: json['created_at'] == null
+          ? null
+          : DateTime.tryParse(json['created_at'] as String)?.toLocal(),
     );
   }
 

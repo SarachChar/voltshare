@@ -19,12 +19,19 @@ class ChargerController {
     return chargers;
   }
 
-  /// Fetches the chargers owned by [hostId], most recent first.
+  /// Fetches the live chargers owned by [hostId] (status 'available' /
+  /// 'unavailable'), most recent first.
   Future<List<Charger>> fetchChargersByHost(String hostId) async {
     onSyncController.add(true);
     chargers = await service.getChargersByHost(hostId);
     onSyncController.add(false);
     return chargers;
+  }
+
+  /// Fetches the pending chargers owned by [hostId] (status 'review',
+  /// 'setup' or 'rejected'), most recent first.
+  Future<List<Charger>> fetchPendingChargersByHost(String hostId) {
+    return service.getPendingChargersByHost(hostId);
   }
 
   /// Fetches the images for a charger, ordered for display.

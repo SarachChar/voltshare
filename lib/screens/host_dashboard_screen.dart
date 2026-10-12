@@ -27,6 +27,7 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
       TabController(length: 3, vsync: this);
 
   late Future<List<Charger>> _chargersFuture;
+  late Future<List<Charger>> _pendingChargersFuture;
 
   /// On/off state for each charger's toggle, keyed by charger id. Seeded from
   /// the charger's `status` and updated optimistically when the host flips a
@@ -56,11 +57,17 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
   void initState() {
     super.initState();
     _chargersFuture = _loadChargers();
+    _pendingChargersFuture = _loadPendingChargers();
   }
 
   Future<List<Charger>> _loadChargers() {
     final hostId = Supabase.instance.client.auth.currentUser?.id ?? '';
     return _controller.fetchChargersByHost(hostId);
+  }
+
+  Future<List<Charger>> _loadPendingChargers() {
+    final hostId = Supabase.instance.client.auth.currentUser?.id ?? '';
+    return _controller.fetchPendingChargersByHost(hostId);
   }
 
   @override
@@ -81,7 +88,7 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
               controller: _tabController,
               children: [
                 _buildMyChargersTab(),
-                const _PlaceholderTab(label: 'Pending'),
+                _buildPendingTab(),
                 const _PlaceholderTab(label: 'Revenue'),
               ],
             ),
@@ -262,14 +269,352 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
     );
   }
 
+  // ----- Pending tab ----------------------------------------------------------
+
+  Widget _buildPendingTab() {
+    return FutureBuilder<List<Charger>>(
+      future: _pendingChargersFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: _primary),
+          );
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Failed to load your pending chargers.',
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+            ),
+          );
+        }
+
+        final chargers = snapshot.data ?? const <Charger>[];
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildApprovalBanner(),
+            const Padding(padding: EdgeInsets.only(top: 16)),
+            _buildApprovalStepsCard(),
+            const Padding(padding: EdgeInsets.only(top: 16)),
+            if (chargers.isEmpty)
+              _buildPendingEmpty()
+            else
+              for (final charger in chargers) ...[
+                _buildPendingCard(charger),
+                const Padding(padding: EdgeInsets.only(top: 16)),
+              ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildApprovalBanner() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFCD34D)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('📋', style: TextStyle(fontSize: 22)),
+          const Padding(padding: EdgeInsets.only(left: 12)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Approval Required',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF92400E),
+                  ),
+                ),
+                Padding(padding: EdgeInsets.only(top: 4)),
+                Text(
+                  'New chargers are reviewed by our team and require '
+                  'physical device setup before going live.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: Color(0xFFB45309),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApprovalStepsCard() {
+    const steps = [
+      'Request submitted',
+      'Admin reviews charger info',
+      'Physical device setup & verification',
+      'Charger goes live on VoltShare',
+    ];
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'APPROVAL STEPS',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: _headerDark,
+              letterSpacing: 0.6,
+            ),
+          ),
+          const Padding(padding: EdgeInsets.only(top: 16)),
+          for (int i = 0; i < steps.length; i++) ...[
+            Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDFF7EF),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFBBF0DC)),
+                  ),
+                  child: Text(
+                    '${i + 1}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: _headerDark,
+                    ),
+                  ),
+                ),
+                const Padding(padding: EdgeInsets.only(left: 12)),
+                Expanded(
+                  child: Text(
+                    steps[i],
+                    style: const TextStyle(
+                      fontSize: 15,
+                      color: _dark,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (i != steps.length - 1)
+              const Padding(padding: EdgeInsets.only(top: 14)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingEmpty() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+      alignment: Alignment.center,
+      child: Text(
+        'No chargers are awaiting approval.',
+        style: TextStyle(color: Colors.grey.shade600),
+      ),
+    );
+  }
+
+  Widget _buildPendingCard(Charger charger) {
+    final progress = _PendingProgress.of(charger.status);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDFF7EF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.bolt, color: _primary),
+              ),
+              const Padding(padding: EdgeInsets.only(left: 12)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      charger.name,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: _dark,
+                      ),
+                    ),
+                    const Padding(padding: EdgeInsets.only(top: 4)),
+                    Text(
+                      _cardSubtitle(charger),
+                      style: const TextStyle(fontSize: 14, color: _muted),
+                    ),
+                  ],
+                ),
+              ),
+              const Padding(padding: EdgeInsets.only(left: 8)),
+              _buildPendingBadge(progress),
+            ],
+          ),
+          const Padding(padding: EdgeInsets.only(top: 16)),
+          _buildProgressBar(progress),
+          const Padding(padding: EdgeInsets.only(top: 8)),
+          Text(
+            progress.stepLabel,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: _muted,
+            ),
+          ),
+          const Padding(padding: EdgeInsets.only(top: 12)),
+          _buildPendingNote(progress),
+          if (charger.createdAt != null) ...[
+            const Padding(padding: EdgeInsets.only(top: 12)),
+            Text(
+              'Submitted ${_formatDate(charger.createdAt!)}',
+              style: const TextStyle(fontSize: 13, color: _muted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingBadge(_PendingProgress progress) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: progress.badgeBg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(progress.badgeIcon, size: 16, color: progress.accent),
+          const Padding(padding: EdgeInsets.only(left: 6)),
+          Text(
+            progress.badgeLabel,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: progress.accent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The 4-segment progress bar. Completed segments are green, the current
+  /// (active) segment uses the status accent colour (orange, or red when the
+  /// charger was rejected), and upcoming segments are a faint green.
+  Widget _buildProgressBar(_PendingProgress progress) {
+    return Row(
+      children: [
+        for (int i = 0; i < 4; i++) ...[
+          Expanded(
+            child: Container(
+              height: 6,
+              decoration: BoxDecoration(
+                color: progress.segmentColor(i),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+          if (i != 3) const Padding(padding: EdgeInsets.only(left: 6)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPendingNote(_PendingProgress progress) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: progress.noteBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(progress.noteIcon, size: 18, color: progress.accent),
+          const Padding(padding: EdgeInsets.only(left: 10)),
+          Expanded(
+            child: Text(
+              progress.note,
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: progress.noteText,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatDate(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
   Future<void> _openAddCharger() async {
     final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const AddChargerScreen()),
     );
-    // A charger was created — reload the list so it shows up.
+    // A charger was created — it starts in 'review', so reload both lists.
     if (created == true && mounted) {
       setState(() {
         _chargersFuture = _loadChargers();
+        _pendingChargersFuture = _loadPendingChargers();
       });
     }
   }
@@ -903,6 +1248,94 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
       buffer.write(str[i]);
     }
     return buffer.toString();
+  }
+}
+
+/// View-model that maps a pending charger's `status` onto the 4-step approval
+/// flow (Submitted → Review → Setup → Live) and the colours/labels/notes the
+/// Pending card renders. The active step is highlighted in orange, except when
+/// the charger was rejected, where the Review step turns red.
+class _PendingProgress {
+  _PendingProgress._({
+    required this.activeStep,
+    required this.rejected,
+    required this.badgeLabel,
+    required this.badgeIcon,
+    required this.stepLabel,
+    required this.note,
+  });
+
+  static const Color _green = Color(0xFF10B981);
+  static const Color _greenFaint = Color(0xFFBBF0DC);
+  static const Color _orange = Color(0xFFF59E0B);
+  static const Color _red = Color(0xFFEF4444);
+
+  /// 0-based index of the current step in the 4-step flow.
+  final int activeStep;
+  final bool rejected;
+  final String badgeLabel;
+  final IconData badgeIcon;
+  final String stepLabel;
+  final String note;
+
+  /// Builds the view-model for a charger status. Unknown statuses fall back to
+  /// the review step so the card still renders sensibly.
+  factory _PendingProgress.of(String status) {
+    switch (status) {
+      case 'setup':
+        return _PendingProgress._(
+          activeStep: 2,
+          rejected: false,
+          badgeLabel: 'Device Setup',
+          badgeIcon: Icons.error_outline,
+          stepLabel: 'Step 3 of 4 · Device Setup',
+          note: 'Admin approved — awaiting physical device setup & '
+              'inspection.',
+        );
+      case 'rejected':
+        return _PendingProgress._(
+          activeStep: 1,
+          rejected: true,
+          badgeLabel: 'Rejected',
+          badgeIcon: Icons.cancel_outlined,
+          stepLabel: 'Step 2 of 4 · Review',
+          note: 'Your charger info was rejected.',
+        );
+      case 'review':
+      default:
+        return _PendingProgress._(
+          activeStep: 1,
+          rejected: false,
+          badgeLabel: 'In Review',
+          badgeIcon: Icons.hourglass_empty,
+          stepLabel: 'Step 2 of 4 · Review',
+          note: 'Our team is reviewing your charger info. This usually takes '
+              '1–2 business days.',
+        );
+    }
+  }
+
+  /// Accent colour for the badge, note icon and active progress segment.
+  Color get accent => rejected ? _red : _orange;
+
+  Color get badgeBg =>
+      rejected ? const Color(0xFFFDECEC) : const Color(0xFFEAF2FF);
+
+  Color get noteBg =>
+      rejected ? const Color(0xFFFDECEC) : const Color(0xFFEAF2FF);
+
+  Color get noteText =>
+      rejected ? const Color(0xFFB91C1C) : const Color(0xFF1E3A8A);
+
+  IconData get noteIcon =>
+      rejected ? Icons.cancel_outlined : Icons.check_circle_outline;
+
+  /// Colour of progress segment [index]: completed steps are green, the active
+  /// step uses the accent colour, and upcoming steps are a faint green.
+  Color segmentColor(int index) {
+    if (index < activeStep) return _green;
+    if (index == activeStep) return accent;
+    return _greenFaint;
   }
 }
 

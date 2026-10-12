@@ -4,11 +4,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 
 abstract class ChargerService {
+  /// Returns the chargers shown on the home/map view — only those with
+  /// status 'available' — most recent first.
   Future<List<Charger>> getNearbyChargers();
 
-  /// Returns the chargers owned by [hostId] (the `host_id` column),
-  /// most recent first.
+  /// Returns the live chargers owned by [hostId] (the `host_id` column) —
+  /// those with status 'available' or 'unavailable' — most recent first.
   Future<List<Charger>> getChargersByHost(String hostId);
+
+  /// Returns the pending chargers owned by [hostId] — those still going
+  /// through the approval flow (status 'review', 'setup' or 'rejected') —
+  /// most recent first.
+  Future<List<Charger>> getPendingChargersByHost(String hostId);
 
   /// Returns the images for [chargerId], ordered by `display_order`.
   /// Each [ChargerImage.imageUrl] is a ready-to-use public URL.
@@ -179,6 +186,7 @@ class ChargerSupabaseService implements ChargerService {
     final List<dynamic> data = await _client
         .from('chargers')
         .select()
+        .eq('status', 'available')
         .order('created_at', ascending: false);
 
     return AllChargers.fromJson(data).chargers;
@@ -190,6 +198,19 @@ class ChargerSupabaseService implements ChargerService {
         .from('chargers')
         .select()
         .eq('host_id', hostId)
+        .inFilter('status', ['available', 'unavailable'])
+        .order('created_at', ascending: false);
+
+    return AllChargers.fromJson(data).chargers;
+  }
+
+  @override
+  Future<List<Charger>> getPendingChargersByHost(String hostId) async {
+    final List<dynamic> data = await _client
+        .from('chargers')
+        .select()
+        .eq('host_id', hostId)
+        .inFilter('status', ['review', 'setup', 'rejected'])
         .order('created_at', ascending: false);
 
     return AllChargers.fromJson(data).chargers;
