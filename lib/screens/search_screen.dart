@@ -1,7 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
@@ -27,11 +28,17 @@ enum PowerBand {
 /// (charger type / connector / power) and offset pagination (20 at a time,
 /// loading the next page as the user scrolls near the bottom).
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key, this.controller});
+  const SearchScreen({super.key, this.controller, this.userLocation});
 
   /// Optional injected controller (useful for tests and for reusing the home
   /// screen's controller). Falls back to a default Supabase-backed controller.
   final ChargerController? controller;
+
+  /// Shared device location resolved by the host (home) screen. The first
+  /// query waits briefly for this to populate so it can run once against the
+  /// real location instead of querying twice. Null until a fix is available;
+  /// if it never resolves, the Bangkok fallback is used.
+  final ValueListenable<LatLng?>? userLocation;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -97,60 +104,72 @@ class _SearchScreenState extends State<SearchScreen> {
     _init();
   }
 
+  /// Max time the first query waits for the host screen to resolve a real
+  /// location before falling back to the Bangkok center. Keeps the list from
+  /// hanging if location is slow, off, or denied.
+  static const Duration _locationWaitTimeout = Duration(seconds: 10);
+
   Future<void> _init() async {
-    // Kick off the first search immediately with the fallback location so the
-    // list isn't blocked on the (possibly slow) permission prompt, then refine
-    // once we know the real location.
+    // Use the real device location for the very first query. We wait (briefly)
+    // for the host screen to resolve it so we query once, not twice. If it's
+    // already known we proceed immediately; if it never resolves we fall back
+    // to the Bangkok center.
+    await _applyUserLocation();
+    if (!mounted) return;
     _runSearch(reset: true);
-    await _resolveUserLocation();
+
+    // Keep following later location updates (e.g. a manual recenter on the map
+    // produces a fresher fix) and re-run so distances/order stay accurate.
+    widget.userLocation?.addListener(_onLocationChanged);
   }
 
-  /// Best-effort device location. Never prompts aggressively or throws — if
-  /// permission is denied or location is off, we keep the Bangkok fallback.
-  ///
-  /// On a physical device the first GPS fix can be slow, so we bound
-  /// [Geolocator.getCurrentPosition] with a timeout and fall back to the last
-  /// known position if it fails. Whenever we obtain a real position we re-run
-  /// the search unconditionally — the first search already ran against the
-  /// Bangkok fallback, so comparing against it is not a reliable signal.
-  Future<void> _resolveUserLocation() async {
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) return;
+  /// Resolves the initial location into [_userLat]/[_userLng]. Returns once a
+  /// real fix is available or the wait times out.
+  Future<void> _applyUserLocation() async {
+    final listenable = widget.userLocation;
+    if (listenable == null) return;
 
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+    if (_adoptLocation(listenable.value)) return;
+
+    // Not resolved yet: wait for the first non-null value, bounded by a
+    // timeout so we don't block the list indefinitely.
+    final completer = Completer<void>();
+    void listener() {
+      if (listenable.value != null && !completer.isCompleted) {
+        completer.complete();
       }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return;
-      }
-
-      Position? position;
-      try {
-        position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            timeLimit: Duration(seconds: 10),
-          ),
-        );
-      } catch (_) {
-        // First fix timed out or failed (common on a cold-started physical
-        // device). Fall back to the last known fix if the OS has one cached.
-        position = await Geolocator.getLastKnownPosition();
-      }
-
-      if (!mounted || position == null) return;
-
-      _userLat = position.latitude;
-      _userLng = position.longitude;
-
-      // Re-run so distances/order reflect the real location, replacing the
-      // results that were fetched against the Bangkok fallback.
-      _runSearch(reset: true);
-    } catch (_) {
-      // Keep the fallback location silently.
     }
+
+    listenable.addListener(listener);
+    try {
+      await completer.future.timeout(
+        _locationWaitTimeout,
+        onTimeout: () {},
+      );
+    } finally {
+      listenable.removeListener(listener);
+    }
+    _adoptLocation(listenable.value);
+  }
+
+  /// Copies [location] into the active coordinates. Returns true if a real
+  /// location was adopted (non-null), false otherwise.
+  bool _adoptLocation(LatLng? location) {
+    if (location == null) return false;
+    _userLat = location.latitude;
+    _userLng = location.longitude;
+    return true;
+  }
+
+  /// Re-runs the search when the shared location changes after the first load.
+  void _onLocationChanged() {
+    final location = widget.userLocation?.value;
+    if (location == null || !mounted) return;
+    if (location.latitude == _userLat && location.longitude == _userLng) {
+      return;
+    }
+    _adoptLocation(location);
+    _runSearch(reset: true);
   }
 
   void _onScroll() {
@@ -260,6 +279,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    widget.userLocation?.removeListener(_onLocationChanged);
     _debounce?.cancel();
     _searchController.dispose();
     _scrollController.removeListener(_onScroll);

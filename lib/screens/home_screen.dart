@@ -38,6 +38,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _initialCameraPositioned = false;
   int _navIndex = 0;
 
+  /// Shared, resolved device location. Populated as soon as we obtain a fix
+  /// (either from the early resolve kicked off in [initState] or from a manual
+  /// recenter) and handed to [SearchScreen] so its first query can use the real
+  /// location instead of querying twice (fallback, then refine).
+  final ValueNotifier<LatLng?> _userLocation = ValueNotifier<LatLng?>(null);
+
   /// When set, the sheet shows this charger's details instead of the list.
   Charger? _selectedCharger;
 
@@ -68,8 +74,88 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     });
     _loadChargers();
-    // The map is centered on the user's current location once it's created
-    // (see onMapCreated), so the home map always opens at current location.
+    // Resolve the device location exactly once at startup. This single fix
+    // drives both the map's initial center and the Search tab's first query
+    // (Search is built eagerly inside the IndexedStack), so we never request
+    // GPS twice on launch. The on-demand recenter button fetches its own fresh
+    // fix later, which is a separate, user-initiated action.
+    _resolveUserLocation();
+  }
+
+  /// Resolves the startup device location once and publishes it to
+  /// [_userLocation]. Stays silent (no snackbars) and uses a bounded timeout so
+  /// Search never blocks for long. Also centers the map on the fix if the map
+  /// is already created; otherwise [onMapCreated] centers from [_userLocation].
+  Future<void> _resolveUserLocation() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _centerMapOnStartupFallback();
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        _centerMapOnStartupFallback();
+        return;
+      }
+
+      if (!_locationGranted && mounted) {
+        setState(() => _locationGranted = true);
+      }
+
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+      } catch (_) {
+        position = await Geolocator.getLastKnownPosition();
+      }
+
+      if (position == null) {
+        _centerMapOnStartupFallback();
+        return;
+      }
+
+      _userLocation.value = LatLng(position.latitude, position.longitude);
+      // Center the map on this fix (handles the case where the map was created
+      // before the fix resolved).
+      _centerMapOnUserLocation();
+    } catch (_) {
+      // Keep _userLocation null; Search falls back to its default center.
+      _centerMapOnStartupFallback();
+    }
+  }
+
+  /// Centers the map on the resolved [_userLocation], if both the map and a fix
+  /// are available. Safe to call before either exists — it no-ops until both
+  /// are ready. Only acts for the initial positioning.
+  void _centerMapOnUserLocation() {
+    final location = _userLocation.value;
+    if (_mapController == null || location == null) return;
+    _initialCameraPositioned = true;
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngZoom(location, 15),
+    );
+  }
+
+  /// Startup fallback when no real location is available: focus the first
+  /// charger (once loaded). Mirrors the old `_recenter(fallbackToFirstCharger:
+  /// true)` behavior without requesting GPS again.
+  void _centerMapOnStartupFallback() {
+    if (_initialCameraPositioned) return;
+    if (_chargers.isNotEmpty) {
+      _initialCameraPositioned = true;
+      _focusFirstCharger();
+    }
+    // If chargers aren't loaded yet, _loadChargers() will focus the first one.
   }
 
   void _onSheetMoved() {
@@ -87,10 +173,11 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _chargers = chargers;
       });
-      // If we couldn't center on the user's location (denied/disabled) and the
-      // map hasn't been positioned yet, focus the first charger now that the
-      // list is loaded.
-      if (!_locationGranted && !_initialCameraPositioned) {
+      // If the map hasn't been positioned yet (no location fix available),
+      // focus the first charger now that the list is loaded. Keyed on
+      // _initialCameraPositioned so it also covers the "permission granted but
+      // GPS fix failed" case.
+      if (!_initialCameraPositioned) {
         _initialCameraPositioned = true;
         _focusFirstCharger();
       }
@@ -239,7 +326,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     try {
-      return await Geolocator.getCurrentPosition();
+      final position = await Geolocator.getCurrentPosition();
+      // Keep the shared location fresh so Search reflects the latest fix.
+      _userLocation.value = LatLng(position.latitude, position.longitude);
+      return position;
     } catch (_) {
       _showLocationMessage('Could not get your current location.');
       return null;
@@ -258,6 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _sheetController.removeListener(_onSheetMoved);
     _sheetController.dispose();
     _mapController?.dispose();
+    _userLocation.dispose();
     super.dispose();
   }
 
@@ -269,7 +360,7 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _navIndex,
         children: [
           _buildMapTab(),
-          SearchScreen(controller: _controller),
+          SearchScreen(controller: _controller, userLocation: _userLocation),
           const BlankPage(title: 'Bookings'),
           const ProfileScreen(),
         ],
@@ -363,9 +454,18 @@ class _HomeScreenState extends State<HomeScreen> {
       onCameraMove: (position) => _cameraPosition = position,
       onMapCreated: (controller) {
         _mapController = controller;
-        // Open at the user's current location; if location is unavailable,
-        // fall back to the first charger.
-        _recenter(fallbackToFirstCharger: true);
+        // Open at the startup location fix resolved once in initState (shared
+        // with Search). If the fix hasn't resolved yet, _resolveUserLocation
+        // will center the map when it arrives; if it never resolves,
+        // _centerMapOnStartupFallback focuses the first charger instead.
+        if (_userLocation.value != null) {
+          _centerMapOnUserLocation();
+        } else if (_initialCameraPositioned) {
+          // Fix already failed before the map existed: fall back now.
+          _focusFirstCharger();
+        } else {
+          _centerMapOnStartupFallback();
+        }
       },
     );
   }
