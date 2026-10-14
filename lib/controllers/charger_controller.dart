@@ -19,6 +19,35 @@ class ChargerController {
     return chargers;
   }
 
+  /// Fetches available chargers inside the map's visible rectangle, ordered by
+  /// distance from ([userLat], [userLng]). Emits on [onSync] so the home map's
+  /// loading indicator can react, and caches the result in [chargers].
+  Future<List<Charger>> fetchChargersInBounds({
+    required double userLat,
+    required double userLng,
+    required double minLat,
+    required double minLng,
+    required double maxLat,
+    required double maxLng,
+    int limit = 200,
+  }) async {
+    onSyncController.add(true);
+    try {
+      chargers = await service.getChargersInBounds(
+        userLat: userLat,
+        userLng: userLng,
+        minLat: minLat,
+        minLng: minLng,
+        maxLat: maxLat,
+        maxLng: maxLng,
+        limit: limit,
+      );
+      return chargers;
+    } finally {
+      onSyncController.add(false);
+    }
+  }
+
   /// Distance-sorted, paginated search for the Search screen. Forwards to
   /// [ChargerService.searchChargers]; see that method for the filter semantics.
   /// Does not update [chargers] or emit on [onSync] — the Search screen manages

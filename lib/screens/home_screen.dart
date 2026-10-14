@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -31,12 +33,35 @@ class _HomeScreenState extends State<HomeScreen> {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
 
+  /// How long to wait after the map camera stops moving before querying the
+  /// chargers in the new visible region, so panning/zooming doesn't fire a
+  /// request on every frame.
+  static const Duration _boundsDebounce = Duration(milliseconds: 500);
+
+  /// Max chargers shown for a single viewport. We actually request one more
+  /// than this ([_boundsLimit] + 1) so we can tell "exactly at the cap" apart
+  /// from "more than the cap exist" and warn the user; the extra row is then
+  /// trimmed before display.
+  static const int _boundsLimit = 200;
+
   List<Charger> _chargers = List.empty();
   bool _isLoadingChargers = false;
   bool _isLocating = false;
   bool _locationGranted = false;
   bool _initialCameraPositioned = false;
   int _navIndex = 0;
+
+  /// True when the current viewport contains more chargers than [_boundsLimit],
+  /// so only the nearest [_boundsLimit] are shown. Drives the "zoom in to see
+  /// more" banner.
+  bool _resultsCapped = false;
+
+  /// Debounce timer for viewport-driven charger loading (see [_onCameraIdle]).
+  Timer? _boundsDebounceTimer;
+
+  /// Guards against an out-of-order viewport load: a slow earlier request
+  /// finishing after a newer one would otherwise overwrite fresher results.
+  int _boundsLoadToken = 0;
 
   /// Shared, resolved device location. Populated as soon as we obtain a fix
   /// (either from the early resolve kicked off in [initState] or from a manual
@@ -73,7 +98,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _isLoadingChargers = syncState;
       });
     });
-    _loadChargers();
+    // Chargers are loaded from the map's visible region (see _onCameraIdle),
+    // not fetched all at once. The map centers on the user's location at
+    // startup, which triggers the first viewport load once the camera settles.
+    //
     // Resolve the device location exactly once at startup. This single fix
     // drives both the map's initial center and the Search tab's first query
     // (Search is built eagerly inside the IndexedStack), so we never request
@@ -146,16 +174,83 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Startup fallback when no real location is available: focus the first
-  /// charger (once loaded). Mirrors the old `_recenter(fallbackToFirstCharger:
-  /// true)` behavior without requesting GPS again.
+  /// Startup fallback when no real location is available. With viewport-driven
+  /// loading there's no preloaded list to focus, so we simply leave the map at
+  /// its initial center (Bangkok); the camera settling there triggers the first
+  /// viewport load via [_onCameraIdle].
   void _centerMapOnStartupFallback() {
-    if (_initialCameraPositioned) return;
-    if (_chargers.isNotEmpty) {
-      _initialCameraPositioned = true;
-      _focusFirstCharger();
+    _initialCameraPositioned = true;
+  }
+
+  /// Loads the chargers inside the map's current visible region, ordered by
+  /// distance from the user (or the viewport center when no fix is available).
+  /// Debounced via [_onCameraIdle].
+  Future<void> _loadChargersInView() async {
+    final controller = _mapController;
+    if (controller == null) return;
+
+    final LatLngBounds bounds;
+    try {
+      bounds = await controller.getVisibleRegion();
+    } catch (_) {
+      return;
     }
-    // If chargers aren't loaded yet, _loadChargers() will focus the first one.
+    if (!mounted) return;
+
+    // Sort distances from the user's real location when known; otherwise from
+    // the center of the current viewport so ordering is still sensible.
+    final center = _viewportCenter(bounds);
+    final origin = _userLocation.value ?? center;
+
+    final token = ++_boundsLoadToken;
+    try {
+      // Ask for one more than the display cap so we can detect that the
+      // viewport actually holds more than _boundsLimit chargers.
+      final chargers = await _controller.fetchChargersInBounds(
+        userLat: origin.latitude,
+        userLng: origin.longitude,
+        minLat: bounds.southwest.latitude,
+        minLng: bounds.southwest.longitude,
+        maxLat: bounds.northeast.latitude,
+        maxLng: bounds.northeast.longitude,
+        limit: _boundsLimit + 1,
+      );
+      if (!mounted || token != _boundsLoadToken) return;
+
+      final capped = chargers.length > _boundsLimit;
+      // Trim the probe row so we never display more than the cap.
+      final visible = capped
+          ? chargers.sublist(0, _boundsLimit)
+          : chargers;
+      setState(() {
+        _chargers = visible;
+        _resultsCapped = capped;
+      });
+    } catch (_) {
+      if (!mounted || token != _boundsLoadToken) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not load chargers. Please try again.'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    }
+  }
+
+  /// Midpoint of [bounds]. Longitude handling is simple (no antimeridian wrap),
+  /// which is fine for the app's region (Thailand).
+  LatLng _viewportCenter(LatLngBounds bounds) {
+    return LatLng(
+      (bounds.southwest.latitude + bounds.northeast.latitude) / 2,
+      (bounds.southwest.longitude + bounds.northeast.longitude) / 2,
+    );
+  }
+
+  /// Called when the map camera stops moving. Debounces viewport loads so a
+  /// continuous pan/zoom only triggers one query after the user settles.
+  void _onCameraIdle() {
+    _boundsDebounceTimer?.cancel();
+    _boundsDebounceTimer = Timer(_boundsDebounce, _loadChargersInView);
   }
 
   void _onSheetMoved() {
@@ -163,35 +258,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _sheetSize = _sheetController.size;
     });
-  }
-
-  Future<void> _loadChargers() async {
-    setState(() => _isLoadingChargers = true);
-    try {
-      final chargers = await _controller.fetchNearbyChargers();
-      if (!mounted) return;
-      setState(() {
-        _chargers = chargers;
-      });
-      // If the map hasn't been positioned yet (no location fix available),
-      // focus the first charger now that the list is loaded. Keyed on
-      // _initialCameraPositioned so it also covers the "permission granted but
-      // GPS fix failed" case.
-      if (!_initialCameraPositioned) {
-        _initialCameraPositioned = true;
-        _focusFirstCharger();
-      }
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Could not load chargers. Please try again.'),
-          backgroundColor: Colors.red.shade600,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoadingChargers = false);
-    }
   }
 
   /// Focuses the map on [charger] and shows its details in the sheet.
@@ -246,7 +312,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _recenter({bool fallbackToFirstCharger = false}) async {
+  /// Fetches a fresh fix and moves the map to it. Moving the camera settles
+  /// into [_onCameraIdle], which reloads the chargers for the new region, so no
+  /// explicit reload is needed here. When location is unavailable the map stays
+  /// put (a message is shown by [_determinePosition]).
+  Future<void> _recenter() async {
     if (_isLocating) return;
     setState(() => _isLocating = true);
     try {
@@ -261,11 +331,6 @@ class _HomeScreenState extends State<HomeScreen> {
             15,
           ),
         );
-      } else if (fallbackToFirstCharger && _chargers.isNotEmpty) {
-        // Location unavailable: focus the first charger instead. If chargers
-        // aren't loaded yet, _loadChargers() will focus once ready.
-        _initialCameraPositioned = true;
-        _focusFirstCharger();
       }
     } finally {
       if (mounted) setState(() => _isLocating = false);
@@ -284,15 +349,6 @@ class _HomeScreenState extends State<HomeScreen> {
           tilt: 0,
         ),
       ),
-    );
-  }
-
-  /// Centers the map on the first charger in the list, when available.
-  void _focusFirstCharger() {
-    if (_mapController == null || _chargers.isEmpty) return;
-    final first = _chargers.first;
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(first.latitude, first.longitude), 13),
     );
   }
 
@@ -345,6 +401,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _boundsDebounceTimer?.cancel();
     _sheetController.removeListener(_onSheetMoved);
     _sheetController.dispose();
     _mapController?.dispose();
@@ -405,15 +462,63 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
+        // "Too many results" banner: shown while the viewport holds more than
+        // the display cap. Hidden during a reload so it doesn't flicker.
+        if (_resultsCapped && !_isLoadingChargers)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 12,
+            left: 16,
+            right: 64,
+            child: _buildCappedBanner(),
+          ),
+
         // Draggable Nearby Chargers sheet.
         _buildNearbySheet(),
       ],
     );
   }
 
-  /// Reloads the charger list. Sits at the top of the stacked map controls
-  /// (above the compass button) and shows a spinner while a reload is in
-  /// flight.
+  /// Banner shown when the current viewport holds more chargers than the
+  /// display cap, telling the user only the nearest [_boundsLimit] are shown
+  /// and to zoom in for the rest.
+  Widget _buildCappedBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.info_outline, color: _primary, size: 20),
+          const Padding(padding: EdgeInsets.only(left: 10)),
+          Expanded(
+            child: Text(
+              'Not all chargers in this area are shown — only the '
+              '$_boundsLimit nearest. Zoom in to see the full list.',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _dark,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Reloads the chargers for the current map view. Sits at the top of the
+  /// stacked map controls (above the compass button) and shows a spinner while
+  /// a reload is in flight.
   Widget _buildRefreshButton() {
     return Material(
       color: Colors.white,
@@ -421,7 +526,7 @@ class _HomeScreenState extends State<HomeScreen> {
       elevation: 2,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: _isLoadingChargers ? null : _loadChargers,
+        onTap: _isLoadingChargers ? null : _loadChargersInView,
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: _isLoadingChargers
@@ -452,18 +557,20 @@ class _HomeScreenState extends State<HomeScreen> {
       zoomControlsEnabled: false,
       zoomGesturesEnabled: true,
       onCameraMove: (position) => _cameraPosition = position,
+      // Each time the camera settles, (debounced) load the chargers for the
+      // new visible region. This also drives the very first load once the
+      // startup camera animation finishes.
+      onCameraIdle: _onCameraIdle,
       onMapCreated: (controller) {
         _mapController = controller;
         // Open at the startup location fix resolved once in initState (shared
         // with Search). If the fix hasn't resolved yet, _resolveUserLocation
-        // will center the map when it arrives; if it never resolves,
-        // _centerMapOnStartupFallback focuses the first charger instead.
+        // will center the map when it arrives; otherwise the map stays at its
+        // initial center. Either way, onCameraIdle triggers the first viewport
+        // load once the camera settles.
         if (_userLocation.value != null) {
           _centerMapOnUserLocation();
-        } else if (_initialCameraPositioned) {
-          // Fix already failed before the map existed: fall back now.
-          _focusFirstCharger();
-        } else {
+        } else if (!_initialCameraPositioned) {
           _centerMapOnStartupFallback();
         }
       },

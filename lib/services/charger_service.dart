@@ -8,6 +8,25 @@ abstract class ChargerService {
   /// status 'available' — most recent first.
   Future<List<Charger>> getNearbyChargers();
 
+  /// Returns available chargers whose coordinates fall inside the map's visible
+  /// rectangle, backed by the `chargers_in_bounds` Postgres function. Results
+  /// are ordered by distance from ([userLat], [userLng]) — nearest first — with
+  /// each result's [Charger.distanceMeters] populated.
+  ///
+  /// The bounds are the visible region's corners:
+  ///   [minLat]/[minLng]  south-west corner
+  ///   [maxLat]/[maxLng]  north-east corner
+  /// [limit] caps how many rows come back in dense areas.
+  Future<List<Charger>> getChargersInBounds({
+    required double userLat,
+    required double userLng,
+    required double minLat,
+    required double minLng,
+    required double maxLat,
+    required double maxLng,
+    int limit,
+  });
+
   /// Distance-sorted, paginated search for the Search screen, backed by the
   /// `search_chargers` Postgres function. Returns up to [limit] available
   /// chargers starting at [offset], nearest to ([userLat], [userLng]) first,
@@ -210,6 +229,32 @@ class ChargerSupabaseService implements ChargerService {
         .select()
         .eq('status', 'available')
         .order('created_at', ascending: false);
+
+    return AllChargers.fromJson(data).chargers;
+  }
+
+  @override
+  Future<List<Charger>> getChargersInBounds({
+    required double userLat,
+    required double userLng,
+    required double minLat,
+    required double minLng,
+    required double maxLat,
+    required double maxLng,
+    int limit = 200,
+  }) async {
+    final List<dynamic> data = await _client.rpc(
+      'chargers_in_bounds',
+      params: {
+        'user_lat': userLat,
+        'user_lng': userLng,
+        'min_lat': minLat,
+        'min_lng': minLng,
+        'max_lat': maxLat,
+        'max_lng': maxLng,
+        'page_limit': limit,
+      },
+    );
 
     return AllChargers.fromJson(data).chargers;
   }
