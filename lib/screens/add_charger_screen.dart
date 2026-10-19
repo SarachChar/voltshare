@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -1568,17 +1569,8 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
   }
 
   Future<void> _pickTime(_DayHours day, {required bool isStart}) async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: isStart ? day.start : day.end,
-      builder: (context, child) {
-        // Force 24-hour layout so it matches the "07:00 – 22:00" display.
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-          child: child!,
-        );
-      },
-    );
+    final current = isStart ? day.start : day.end;
+    final picked = await _showHalfHourPicker(current);
     if (picked == null) return;
     setState(() {
       if (isStart) {
@@ -1587,6 +1579,69 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         day.end = picked;
       }
     });
+  }
+
+  /// Shows a Cupertino wheel picker that only allows picking times on the
+  /// hour or half-hour (00:00, 00:30, 01:00, ... 23:30).
+  Future<TimeOfDay?> _showHalfHourPicker(TimeOfDay initial) {
+    // Build every half-hour slot in the day: 48 entries.
+    final slots = <TimeOfDay>[
+      for (var minutes = 0; minutes < 24 * 60; minutes += 30)
+        TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+    ];
+
+    // Snap the initial selection to the nearest half-hour so the wheel opens
+    // on a matching row even if the stored value isn't on a boundary.
+    final initialMinutes = initial.hour * 60 + initial.minute;
+    final snappedMinutes = ((initialMinutes + 15) ~/ 30) * 30 % (24 * 60);
+    var initialIndex = snappedMinutes ~/ 30;
+    if (initialIndex < 0 || initialIndex >= slots.length) initialIndex = 0;
+
+    // Tracks the wheel's current selection; confirmed only when the user
+    // taps "Done".
+    var selectedIndex = initialIndex;
+
+    return showModalBottomSheet<TimeOfDay>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: SizedBox(
+            height: 300,
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    CupertinoButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    CupertinoButton(
+                      onPressed: () =>
+                          Navigator.of(context).pop(slots[selectedIndex]),
+                      child: const Text('Done'),
+                    ),
+                  ],
+                ),
+                Expanded(
+                  child: CupertinoPicker(
+                    scrollController: FixedExtentScrollController(
+                      initialItem: initialIndex,
+                    ),
+                    itemExtent: 40,
+                    onSelectedItemChanged: (index) => selectedIndex = index,
+                    children: [
+                      for (final slot in slots)
+                        Center(child: Text(_formatTime(slot))),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// Formats a [TimeOfDay] as "HH:mm" (24-hour, zero-padded).
