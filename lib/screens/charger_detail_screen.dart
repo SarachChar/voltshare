@@ -3,6 +3,7 @@ import 'package:voltshare_app/components/map_navigation.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/screens/photo_viewer_screen.dart';
+import 'package:voltshare_app/screens/reserve_charger_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
 
 /// Full-screen charger details view. For now it shows a swipeable image
@@ -1201,8 +1202,12 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
               height: 56,
               child: ElevatedButton(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Booking coming soon.')),
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ReserveChargerScreen(
+                        charger: widget.charger,
+                      ),
+                    ),
                   );
                 },
                 style: ElevatedButton.styleFrom(

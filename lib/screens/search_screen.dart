@@ -341,7 +341,7 @@ class _SearchScreenState extends State<SearchScreen> {
         onChanged: _onQueryChanged,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
-          hintText: 'Area, province, or name...',
+          hintText: 'Search by charger name...',
           hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 15),
           prefixIcon: const Icon(Icons.search, color: _muted),
           suffixIcon: _query.isEmpty

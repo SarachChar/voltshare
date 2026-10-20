@@ -1605,7 +1605,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
       context: context,
       builder: (context) {
         return SafeArea(
-          child: SizedBox(
+          child: Container(
             height: 300,
             child: Column(
               children: [

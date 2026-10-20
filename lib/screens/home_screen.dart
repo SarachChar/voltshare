@@ -6,7 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:voltshare_app/components/map_navigation.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
-import 'package:voltshare_app/screens/blank_screen.dart';
+import 'package:voltshare_app/screens/bookings_screen.dart';
 import 'package:voltshare_app/screens/charger_detail_screen.dart';
 import 'package:voltshare_app/screens/profile_screen.dart';
 import 'package:voltshare_app/screens/search_screen.dart';
@@ -418,7 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           _buildMapTab(),
           SearchScreen(controller: _controller, userLocation: _userLocation),
-          const BlankPage(title: 'Bookings'),
+          const BookingsScreen(),
           const ProfileScreen(),
         ],
       ),
