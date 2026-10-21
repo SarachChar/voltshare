@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voltshare_app/models/profile_provider.dart';
 import 'package:voltshare_app/screens/host_dashboard_screen.dart';
+import 'package:voltshare_app/screens/payment_methods_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -86,7 +87,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
                 ),
-              const Padding(padding: EdgeInsets.only(top: 40)),
+              const Padding(padding: EdgeInsets.only(top: 32)),
+              _buildMenuCard(),
+              const Padding(padding: EdgeInsets.only(top: 24)),
               _buildSwitchToHostButton(),
               const Padding(padding: EdgeInsets.only(top: 16)),
               _buildLogoutButton(),
@@ -120,6 +123,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// A single white card holding the settings-style menu rows. These are mocks
+  /// for now — tapping one just shows a "coming soon" snackbar; no real pages
+  /// are wired up yet.
+  Widget _buildMenuCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        children: [
+          _menuRow(
+            Icons.account_balance_wallet_outlined,
+            'Payment',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const PaymentMethodsScreen(),
+              ),
+            ),
+          ),
+          _menuDivider(),
+          _menuRow(Icons.shield_outlined, 'Privacy & Security'),
+          _menuDivider(),
+          _menuRow(Icons.help_outline, 'Help & Support'),
+        ],
+      ),
+    );
+  }
+
+  Widget _menuRow(IconData icon, String title, {VoidCallback? onTap}) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap ?? () => _showComingSoon(title),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: _primary, size: 22),
+            ),
+            const Padding(padding: EdgeInsets.only(left: 14)),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: _dark,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _menuDivider() {
+    return Divider(
+      height: 1,
+      thickness: 1,
+      indent: 16,
+      endIndent: 16,
+      color: Colors.grey.withValues(alpha: 0.12),
+    );
+  }
+
+  void _showComingSoon(String title) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$title is coming soon.')),
     );
   }
 
