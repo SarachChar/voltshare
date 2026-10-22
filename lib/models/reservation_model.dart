@@ -14,6 +14,11 @@ class Reservation {
   final DateTime endTime;
   final int durationMinutes;
   final String status;
+
+  /// When the charging session actually began. Null until the driver starts
+  /// charging. A reservation is "charging now" when it's confirmed AND has a
+  /// [startedAt]; once finished its status becomes "completed".
+  final DateTime? startedAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -31,6 +36,7 @@ class Reservation {
     required this.endTime,
     required this.durationMinutes,
     this.status = 'confirmed',
+    this.startedAt,
     this.createdAt,
     this.updatedAt,
     this.chargerName = '',
@@ -55,6 +61,7 @@ class Reservation {
           DateTime.fromMillisecondsSinceEpoch(0),
       durationMinutes: (json['duration_minutes'] as num?)?.toInt() ?? 0,
       status: json['status'] as String? ?? 'confirmed',
+      startedAt: _parseDate(json['started_at']),
       createdAt: _parseDate(json['created_at']),
       updatedAt: _parseDate(json['updated_at']),
       chargerName: charger?['name'] as String? ?? '',
@@ -73,6 +80,9 @@ class Reservation {
   bool get isConfirmed => status == 'confirmed';
   bool get isCompleted => status == 'completed';
   bool get isCancelled => status == 'cancelled';
+
+  /// True while a charging session is in progress for this booking.
+  bool get isCharging => isConfirmed && startedAt != null;
 
   static const List<String> _months = [
     'Jan',

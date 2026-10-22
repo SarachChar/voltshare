@@ -3,13 +3,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voltshare_app/controllers/reservation_controller.dart';
 import 'package:voltshare_app/models/reservation_model.dart';
+import 'package:voltshare_app/screens/plug_in_screen.dart';
 import 'package:voltshare_app/services/reservation_service.dart';
 
 /// "My Bookings" tab. Lists the signed-in driver's reservations with filter
 /// chips for All / Confirmed / Completed / Cancelled.
 ///
-/// For now this is read-only: the per-card action buttons (Start, Review,
-/// cancel) are shown to match the status but don't do anything yet.
+/// "Start" re-checks the booking (still confirmed, slot has begun) and then
+/// opens the plug-in prompt → charging session. Cancel (X) is wired up;
+/// "Review" is still a visual placeholder.
 class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key, this.controller});
 
@@ -70,6 +72,10 @@ class _BookingsScreenState extends State<BookingsScreen> {
   bool _isLoading = true;
   bool _hasError = false;
 
+  /// Id of the booking whose "Start" check is in flight, so its button shows
+  /// a spinner and repeated taps are ignored.
+  String? _startingId;
+
   @override
   void initState() {
     super.initState();
@@ -107,11 +113,17 @@ class _BookingsScreenState extends State<BookingsScreen> {
     }
   }
 
-  /// The reservations matching the active filter.
+  /// The reservations matching the active filter. [_reservations] arrives
+  /// newest first (start_time desc), which every tab keeps except Confirmed:
+  /// upcoming bookings read better soonest first, so that tab is ascending.
   List<Reservation> get _visible {
     final status = _filter.status;
     if (status == null) return _reservations;
-    return _reservations.where((r) => r.status == status).toList();
+    final rows = _reservations.where((r) => r.status == status).toList();
+    if (_filter == _BookingFilter.confirmed) {
+      rows.sort((a, b) => a.startTime.compareTo(b.startTime));
+    }
+    return rows;
   }
 
   @override
@@ -200,26 +212,30 @@ class _BookingsScreenState extends State<BookingsScreen> {
       return const Center(child: CircularProgressIndicator(color: _primary));
     }
     if (_hasError) {
-      return _emptyState(
-        icon: Icons.error_outline,
-        message: 'Couldn\'t load your bookings. Pull to try again.',
+      return _refreshable(
+        _emptyState(
+          icon: Icons.error_outline,
+          message: 'Couldn\'t load your bookings. Pull to try again.',
+        ),
       );
     }
 
     final visible = _visible;
     if (visible.isEmpty) {
-      return _emptyState(
-        icon: Icons.calendar_today_outlined,
-        message: _reservations.isEmpty
-            ? 'No bookings yet.'
-            : 'No ${_filter.label.toLowerCase()} bookings.',
+      return _refreshable(
+        _emptyState(
+          icon: Icons.calendar_today_outlined,
+          message: _reservations.isEmpty
+              ? 'No bookings yet.'
+              : 'No ${_filter.label.toLowerCase()} bookings.',
+        ),
       );
     }
 
-    return RefreshIndicator(
-      color: _primary,
-      onRefresh: _load,
-      child: ListView.builder(
+    return _refreshable(
+      ListView.builder(
+        // Always scrollable so pull-to-refresh works with only a few cards.
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         itemCount: visible.length,
         itemBuilder: (context, index) => Padding(
@@ -230,9 +246,15 @@ class _BookingsScreenState extends State<BookingsScreen> {
     );
   }
 
+  /// Wraps a scrollable in pull-to-refresh that reloads the bookings.
+  Widget _refreshable(Widget child) {
+    return RefreshIndicator(color: _primary, onRefresh: _load, child: child);
+  }
+
   Widget _emptyState({required IconData icon, required String message}) {
     return ListView(
-      // Keep pull-to-refresh working even when empty.
+      // A scrollable (even when empty) is what lets pull-to-refresh trigger.
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 80, 20, 20),
       children: [
         Icon(icon, size: 44, color: Colors.grey.shade400),
@@ -408,13 +430,12 @@ class _BookingsScreenState extends State<BookingsScreen> {
     );
   }
 
-  /// The trailing action buttons, which differ by status. "Start" is still a
-  /// visual placeholder; the cancel (X) button is wired up.
+  /// The trailing action buttons, which differ by status.
   List<Widget> _cardActions(Reservation r) {
     switch (r.status) {
       case 'confirmed':
         return [
-          _primaryAction('Start'),
+          _startAction(r),
           const Padding(padding: EdgeInsets.only(left: 8)),
           _cancelAction(r),
         ];
@@ -427,22 +448,148 @@ class _BookingsScreenState extends State<BookingsScreen> {
     }
   }
 
-  Widget _primaryAction(String label) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 22),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: _primary,
+  Widget _startAction(Reservation r) {
+    final isStarting = _startingId == r.id;
+    return Material(
+      color: _primary,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
         borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w800,
-          color: Colors.white,
+        onTap: _startingId == null ? () => _onStart(r) : null,
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 22),
+          alignment: Alignment.center,
+          child: isStarting
+              ? Container(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  'Start',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
         ),
+      ),
+    );
+  }
+
+  /// Length of one bookable slot, matching the reservation grid.
+  static const Duration _slotLength = Duration(minutes: 30);
+
+  /// Before starting a session, re-fetches the booking and checks that:
+  ///   1. it's still confirmed (the cron job may have auto-cancelled it), and
+  ///   2. it's time to charge: either the booked slot has begun, or the
+  ///      booking is the very next slot and nobody is charging on the charger
+  ///      right now (no other confirmed reservation with `started_at`).
+  /// On failure an error dialog is shown and nothing else happens; otherwise
+  /// the plug-in prompt opens (which then leads to the charging session).
+  Future<void> _onStart(Reservation r) async {
+    setState(() => _startingId = r.id);
+
+    Reservation? latest;
+    String? timingError;
+    try {
+      latest = await _controller.fetchReservationById(r.id);
+      if (latest != null && latest.isConfirmed) {
+        timingError = await _startBlockedReason(latest);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _startingId = null);
+      await _showStartError(
+        'Couldn\'t check this booking. Please check your connection and try '
+        'again.',
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _startingId = null);
+
+    // 1. Still confirmed?
+    if (latest == null || !latest.isConfirmed) {
+      final message = latest == null
+          ? 'This booking no longer exists.'
+          : latest.isCancelled
+              ? 'This booking was cancelled because charging wasn\'t started '
+                  'within 15 minutes of the booked start time. The booking '
+                  'fee is non-refundable.'
+              : 'This booking is already ${latest.status}.';
+      await _showStartError(message);
+      // Refresh so the card reflects its real status.
+      if (mounted) await _load();
+      return;
+    }
+
+    // 2. Is it time to charge?
+    if (timingError != null) {
+      await _showStartError(timingError);
+      return;
+    }
+
+    // Keep the joined charger fields from the list row in case they're
+    // missing on the re-fetched copy.
+    final reservation = latest.chargerName.isNotEmpty ? latest : r;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PlugInScreen(reservation: reservation)),
+    );
+    if (mounted) await _load();
+  }
+
+  /// Returns why [r] can't start charging yet, or null if it can. Only covers
+  /// timing; the status check is done by the caller. Throws if the
+  /// active-session lookup fails.
+  Future<String?> _startBlockedReason(Reservation r) async {
+    final now = DateTime.now();
+
+    // Booked slot has started: allowed (no check for an overrunning session).
+    if (!now.isBefore(r.startTime)) return null;
+
+    final startLabel = r.timeRangeLabel.split(' - ').first;
+
+    // More than one slot early: the next slot isn't ours yet.
+    if (now.isBefore(r.startTime.subtract(_slotLength))) {
+      return 'It\'s not time yet. Your booking starts on ${r.dateLabel} at '
+          '$startLabel. You can start up to ${_slotLength.inMinutes} minutes '
+          'early if the charger is free.';
+    }
+
+    // Our booking is the next slot: start early only if nobody is charging
+    // on this charger right now.
+    final inUse = await _controller.hasActiveSessionOnCharger(
+      chargerId: r.chargerId,
+      excludeReservationId: r.id,
+    );
+    if (inUse) {
+      return 'The charger is still in use by another driver. Please wait '
+          'until your booking starts at $startLabel.';
+    }
+    return null;
+  }
+
+  Future<void> _showStartError(String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Can\'t start charging'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text(
+              'OK',
+              style: TextStyle(fontWeight: FontWeight.w700, color: _primary),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -43,6 +43,23 @@ class ReservationController {
     return service.getReservationsByUser(userId);
   }
 
+  /// Re-fetches a single reservation so callers can check its current status
+  /// (e.g. whether the cron job has auto-cancelled it). Null if it's gone.
+  Future<Reservation?> fetchReservationById(String id) {
+    return service.getReservationById(id);
+  }
+
+  /// Whether someone else is currently charging on [chargerId].
+  Future<bool> hasActiveSessionOnCharger({
+    required String chargerId,
+    String? excludeReservationId,
+  }) {
+    return service.hasActiveSessionOnCharger(
+      chargerId: chargerId,
+      excludeReservationId: excludeReservationId,
+    );
+  }
+
   /// Deletes a reservation (used to roll back when payment fails).
   Future<void> deleteReservation(String id) {
     return service.deleteReservation(id);

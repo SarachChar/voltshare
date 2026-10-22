@@ -26,6 +26,18 @@ abstract class ReservationService {
   /// Returns the reservations made by [userId], most recent first.
   Future<List<Reservation>> getReservationsByUser(String userId);
 
+  /// Fetches the latest copy of a single reservation by [id] (with the joined
+  /// charger fields). Returns null when the row no longer exists.
+  Future<Reservation?> getReservationById(String id);
+
+  /// True when [chargerId] has a charging session in progress — a reservation
+  /// that is confirmed and has a `started_at`. [excludeReservationId] is left
+  /// out of the check (pass the driver's own booking).
+  Future<bool> hasActiveSessionOnCharger({
+    required String chargerId,
+    String? excludeReservationId,
+  });
+
   /// Deletes a reservation by [id]. Used to roll back a just-created booking
   /// when the payment step fails.
   Future<void> deleteReservation(String id);
@@ -102,6 +114,36 @@ class ReservationSupabaseService implements ReservationService {
     return data
         .map((item) => Reservation.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  @override
+  Future<Reservation?> getReservationById(String id) async {
+    final data = await _client
+        .from('reservations')
+        .select('*, chargers(name, address, power_kw)')
+        .eq('id', id)
+        .maybeSingle();
+
+    return data == null ? null : Reservation.fromJson(data);
+  }
+
+  @override
+  Future<bool> hasActiveSessionOnCharger({
+    required String chargerId,
+    String? excludeReservationId,
+  }) async {
+    var query = _client
+        .from('reservations')
+        .select('id')
+        .eq('charger_id', chargerId)
+        .eq('status', 'confirmed')
+        .not('started_at', 'is', null);
+    if (excludeReservationId != null) {
+      query = query.neq('id', excludeReservationId);
+    }
+
+    final List<dynamic> data = await query.limit(1);
+    return data.isNotEmpty;
   }
 
   @override
