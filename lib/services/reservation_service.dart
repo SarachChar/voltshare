@@ -25,6 +25,14 @@ abstract class ReservationService {
 
   /// Returns the reservations made by [userId], most recent first.
   Future<List<Reservation>> getReservationsByUser(String userId);
+
+  /// Deletes a reservation by [id]. Used to roll back a just-created booking
+  /// when the payment step fails.
+  Future<void> deleteReservation(String id);
+
+  /// Cancels a reservation by setting its status to 'cancelled'. The booking
+  /// fee is non-refundable, so no refund is issued.
+  Future<void> cancelReservation(String id);
 }
 
 /// Supabase-backed implementation that reads from the `reservations` table.
@@ -94,5 +102,18 @@ class ReservationSupabaseService implements ReservationService {
     return data
         .map((item) => Reservation.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  @override
+  Future<void> deleteReservation(String id) async {
+    await _client.from('reservations').delete().eq('id', id);
+  }
+
+  @override
+  Future<void> cancelReservation(String id) async {
+    await _client
+        .from('reservations')
+        .update({'status': 'cancelled'})
+        .eq('id', id);
   }
 }

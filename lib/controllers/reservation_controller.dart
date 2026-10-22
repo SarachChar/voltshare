@@ -42,4 +42,14 @@ class ReservationController {
   Future<List<Reservation>> fetchReservationsByUser(String userId) {
     return service.getReservationsByUser(userId);
   }
+
+  /// Deletes a reservation (used to roll back when payment fails).
+  Future<void> deleteReservation(String id) {
+    return service.deleteReservation(id);
+  }
+
+  /// Cancels a reservation (sets status to 'cancelled'). Fee is non-refundable.
+  Future<void> cancelReservation(String id) {
+    return service.cancelReservation(id);
+  }
 }

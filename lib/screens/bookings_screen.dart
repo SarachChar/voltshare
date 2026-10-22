@@ -408,15 +408,15 @@ class _BookingsScreenState extends State<BookingsScreen> {
     );
   }
 
-  /// The trailing action buttons, which differ by status. Purely visual for
-  /// now — none of them are wired up.
+  /// The trailing action buttons, which differ by status. "Start" is still a
+  /// visual placeholder; the cancel (X) button is wired up.
   List<Widget> _cardActions(Reservation r) {
     switch (r.status) {
       case 'confirmed':
         return [
           _primaryAction('Start'),
           const Padding(padding: EdgeInsets.only(left: 8)),
-          _cancelAction(),
+          _cancelAction(r),
         ];
       case 'completed':
         return [_softAction('Review')];
@@ -467,17 +467,64 @@ class _BookingsScreenState extends State<BookingsScreen> {
     );
   }
 
-  Widget _cancelAction() {
-    return Container(
-      width: 44,
-      height: 44,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEE2E2),
+  Widget _cancelAction(Reservation r) {
+    return Material(
+      color: const Color(0xFFFEE2E2),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
         borderRadius: BorderRadius.circular(12),
+        onTap: () => _onCancel(r),
+        child: Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          child: const Icon(Icons.close, color: Color(0xFFB91C1C), size: 20),
+        ),
       ),
-      child: const Icon(Icons.close, color: Color(0xFFB91C1C), size: 20),
     );
+  }
+
+  /// Confirms, then cancels a booking (no refund of the booking fee).
+  Future<void> _onCancel(Reservation r) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel booking?'),
+        content: const Text(
+          'This booking will be cancelled. The booking fee is '
+          'non-refundable and will not be returned.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep booking'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(
+              'Cancel booking',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Colors.red.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _controller.cancelReservation(r.id);
+      if (!mounted) return;
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Couldn\'t cancel the booking.')),
+      );
+    }
   }
 
   static String _capitalize(String value) {

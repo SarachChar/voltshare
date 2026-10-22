@@ -1,19 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:voltshare_app/controllers/payment_controller.dart';
+import 'package:voltshare_app/controllers/payment_method_controller.dart';
 import 'package:voltshare_app/controllers/reservation_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
+import 'package:voltshare_app/models/payment_method_model.dart';
+import 'package:voltshare_app/screens/payment_failed_screen.dart';
+import 'package:voltshare_app/screens/payment_methods_screen.dart';
 import 'package:voltshare_app/screens/reservation_confirmed_screen.dart';
+import 'package:voltshare_app/services/payment_method_service.dart';
+import 'package:voltshare_app/services/payment_service.dart';
 import 'package:voltshare_app/services/reservation_service.dart';
 
 /// Review step shown after the driver taps "Next" on the reserve screen. It
-/// lays out the full booking summary and holds the single "Confirm
-/// Reservation" action, which inserts the `reservations` row and, on success,
-/// moves on to the confirmation screen.
+/// lays out the full booking summary, lets the driver pick which saved card to
+/// pay with, and holds the "Confirm Reservation" action.
+///
+/// Confirm flow (payment is mocked via the `mock-payment` edge function):
+///   1. create the reservation (fails early if the slot was just taken)
+///   2. charge the chosen card
+///      - success -> record the booking fee, go to the confirmation screen
+///      - failure -> roll back (delete) the reservation, let the driver retry
 ///
 /// Returns a [ReservationSummaryResult] when popped so the reserve screen knows
-/// whether the booking went through (leave the flow) or failed because the
-/// slot was just taken (refresh and let the driver pick again).
+/// whether the booking went through, the slot was taken, or payment failed.
 class ReservationSummaryScreen extends StatefulWidget {
   const ReservationSummaryScreen({
     super.key,
@@ -27,6 +38,8 @@ class ReservationSummaryScreen extends StatefulWidget {
     required this.timeLabel,
     required this.durationLabel,
     this.reservationController,
+    this.paymentMethodController,
+    this.paymentController,
   });
 
   final Charger charger;
@@ -45,6 +58,8 @@ class ReservationSummaryScreen extends StatefulWidget {
   final String durationLabel;
 
   final ReservationController? reservationController;
+  final PaymentMethodController? paymentMethodController;
+  final PaymentController? paymentController;
 
   @override
   State<ReservationSummaryScreen> createState() =>
@@ -53,11 +68,10 @@ class ReservationSummaryScreen extends StatefulWidget {
 
 /// Outcome reported back to the reserve screen when this screen is popped.
 enum ReservationSummaryResult {
-  /// Booking saved (and the confirmation screen was shown and dismissed).
+  /// Booking saved and paid (confirmation screen shown and dismissed).
   booked,
 
-  /// Insert failed because the slot was just taken — reserve screen should
-  /// refresh the day and let the driver pick again.
+  /// The slot was just taken — reserve screen should refresh the day.
   slotTaken,
 }
 
@@ -71,28 +85,133 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
       widget.reservationController ??
           ReservationController(ReservationSupabaseService());
 
-  /// True while an insert is in flight, so the button shows a spinner and
-  /// double-taps are blocked.
+  late final PaymentMethodController _paymentMethodController =
+      widget.paymentMethodController ??
+          PaymentMethodController(PaymentMethodSupabaseService());
+
+  late final PaymentController _paymentController =
+      widget.paymentController ?? PaymentController(PaymentSupabaseService());
+
+  /// The user's saved cards, and the one currently selected to pay with.
+  List<PaymentMethod> _cards = List.empty();
+  PaymentMethod? _selectedCard;
+  bool _isLoadingCards = true;
+
+  /// True while the confirm flow (reserve + charge) is running.
   bool _isBooking = false;
+
+  /// Whether we created the payment controllers (and must dispose them). When
+  /// injected (tests), the caller owns their lifecycle.
+  late final bool _ownsPaymentMethodController =
+      widget.paymentMethodController == null;
+  late final bool _ownsPaymentController = widget.paymentController == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCards();
+  }
+
+  @override
+  void dispose() {
+    if (_ownsPaymentMethodController) _paymentMethodController.dispose();
+    if (_ownsPaymentController) _paymentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCards() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null || userId.isEmpty) {
+      setState(() => _isLoadingCards = false);
+      return;
+    }
+    try {
+      final cards = await _paymentMethodController.fetchPaymentMethods(userId);
+      if (!mounted) return;
+      setState(() {
+        _cards = cards;
+        // Default card first (service orders by is_default desc), else the
+        // first card.
+        _selectedCard = cards.isNotEmpty ? cards.first : null;
+        _isLoadingCards = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingCards = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _bg,
-      body: SafeArea(
-        bottom: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          children: [
-            _buildHeader(),
-            const Padding(padding: EdgeInsets.only(top: 20)),
-            _buildChargerCard(),
-            const Padding(padding: EdgeInsets.only(top: 24)),
-            _buildSummary(),
-          ],
+    // Stack wraps the whole Scaffold (including the bottom Pay button) so the
+    // processing overlay covers the entire screen, not just the body. The
+    // outer Material gives the overlay's text/spinner a proper theme ancestor
+    // (without it, Text renders with the yellow debug underline).
+    return Material(
+      color: _bg,
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor: _bg,
+            body: SafeArea(
+              bottom: false,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                children: [
+                  _buildHeader(),
+                  const Padding(padding: EdgeInsets.only(top: 20)),
+                  _buildChargerCard(),
+                  const Padding(padding: EdgeInsets.only(top: 24)),
+                  _buildSummary(),
+                  const Padding(padding: EdgeInsets.only(top: 24)),
+                  _buildPaymentSection(),
+                ],
+              ),
+            ),
+            bottomNavigationBar: _buildConfirmBar(),
+          ),
+          // Full-screen blocking overlay while the booking + payment runs, so
+          // the driver can't tap anything (including the Pay button) until the
+          // result is known.
+          if (_isBooking) _buildProcessingOverlay(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProcessingOverlay() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.45),
+        alignment: Alignment.center,
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: _primary),
+              const Padding(padding: EdgeInsets.only(top: 18)),
+              const Text(
+                'Processing payment…',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _dark,
+                ),
+              ),
+              const Padding(padding: EdgeInsets.only(top: 4)),
+              Text(
+                'Please don\'t close this screen.',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
         ),
       ),
-      bottomNavigationBar: _buildConfirmBar(),
     );
   }
 
@@ -228,15 +347,181 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
     );
   }
 
+  // --- Payment section ------------------------------------------------------
+
+  Widget _buildPaymentSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Pay with',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            color: _dark,
+          ),
+        ),
+        const Padding(padding: EdgeInsets.only(top: 12)),
+        if (_isLoadingCards)
+          Container(
+            padding: const EdgeInsets.all(24),
+            alignment: Alignment.center,
+            decoration: _cardBoxDecoration(),
+            child: const CircularProgressIndicator(color: _primary),
+          )
+        else if (_selectedCard == null)
+          _buildNoCard()
+        else
+          _buildSelectedCard(_selectedCard!),
+      ],
+    );
+  }
+
+  BoxDecoration _cardBoxDecoration() {
+    return BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: Colors.grey.withValues(alpha: 0.15)),
+    );
+  }
+
+  Widget _buildNoCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: _cardBoxDecoration(),
+      child: Column(
+        children: [
+          Icon(Icons.credit_card_off_outlined,
+              size: 36, color: Colors.grey.shade400),
+          const Padding(padding: EdgeInsets.only(top: 10)),
+          Text(
+            'No payment method',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: _dark,
+            ),
+          ),
+          const Padding(padding: EdgeInsets.only(top: 4)),
+          Text(
+            'Add a card before confirming your booking.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+          ),
+          const Padding(padding: EdgeInsets.only(top: 14)),
+          Container(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: _goToAddCard,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _primary,
+                side: const BorderSide(color: _primary, width: 1.5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: const Icon(Icons.add),
+              label: const Text(
+                'Add Card',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectedCard(PaymentMethod card) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _cardBoxDecoration(),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.credit_card, color: _primary, size: 22),
+          ),
+          const Padding(padding: EdgeInsets.only(left: 14)),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  card.brandLabel,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _dark,
+                  ),
+                ),
+                const Padding(padding: EdgeInsets.only(top: 2)),
+                Text(
+                  card.maskedNumber,
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _isBooking ? null : _onChangeCard,
+            child: const Text(
+              'Change',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: _primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onChangeCard() async {
+    final picked = await showModalBottomSheet<PaymentMethod>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _CardPickerSheet(
+        cards: _cards,
+        selectedId: _selectedCard?.id,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedCard = picked);
+    }
+  }
+
+  Future<void> _goToAddCard() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const PaymentMethodsScreen()),
+    );
+    // Reload in case the driver added a card.
+    if (mounted) {
+      setState(() => _isLoadingCards = true);
+      await _loadCards();
+    }
+  }
+
   // --- Confirm bar ----------------------------------------------------------
 
   Widget _buildConfirmBar() {
+    // Can't confirm without a card to pay with.
+    final canConfirm = !_isBooking && !_isLoadingCards && _selectedCard != null;
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(20, 8, 20, 16),
       child: Container(
         height: 56,
         child: ElevatedButton(
-          onPressed: _isBooking ? null : _onConfirm,
+          onPressed: canConfirm ? _onConfirm : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: _primary,
             foregroundColor: Colors.white,
@@ -247,26 +532,24 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
               borderRadius: BorderRadius.circular(28),
             ),
           ),
-          child: _isBooking
-              ? Container(
-                  width: 24,
-                  height: 24,
-                  child: const CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: Colors.white,
-                  ),
-                )
-              : const Text(
-                  'Confirm Reservation',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
+          child: Text(
+            _selectedCard == null
+                ? 'Add a payment method'
+                : 'Pay ฿${widget.fee}',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
       ),
     );
   }
 
   Future<void> _onConfirm() async {
-    // The booking is tied to the signed-in driver's profile (FK -> profiles).
+    final card = _selectedCard;
+    if (card == null) return;
+
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null || userId.isEmpty) {
       _showMessage('Please sign in before booking.');
@@ -274,47 +557,178 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
     }
 
     setState(() => _isBooking = true);
+
+    // 1. Create the reservation first. If the slot was just taken, the DB's
+    //    no-overlap constraint rejects it and no payment is attempted.
+    final String reservationId;
     try {
-      await _reservationController.createReservation(
+      final reservation = await _reservationController.createReservation(
         userId: userId,
         chargerId: widget.charger.id,
         startTime: widget.startTime,
         endTime: widget.endTime,
         durationMinutes: widget.durationMinutes,
       );
-
-      if (!mounted) return;
-      // Show the confirmation screen; when it's dismissed, leave the summary
-      // and tell the reserve screen the booking is done.
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ReservationConfirmedScreen(
-            chargerName: widget.charger.name,
-            dateLabel: widget.dateLabel,
-            timeLabel: widget.timeLabel,
-            durationLabel: widget.durationLabel,
-          ),
-        ),
-      );
-
-      if (!mounted) return;
-      Navigator.of(context).pop(ReservationSummaryResult.booked);
+      reservationId = reservation.id;
     } catch (_) {
       if (!mounted) return;
-      // Most likely cause: someone booked an overlapping slot first and the
-      // DB's no-overlap constraint rejected this insert. Return to the reserve
-      // screen so it can refresh and let the driver pick again.
+      setState(() => _isBooking = false);
       _showMessage(
         'Couldn\'t complete the booking. Those times may have just been '
         'taken — please pick again.',
       );
       Navigator.of(context).pop(ReservationSummaryResult.slotTaken);
+      return;
     }
+
+    // 2. Charge the chosen card (mock).
+    try {
+      final result = await _paymentController.charge(
+        cardLast4: card.last4,
+        amount: widget.fee,
+        reservationRef: reservationId,
+      );
+
+      if (!result.success) {
+        // Payment declined — roll back the reservation and show the failure
+        // screen so the driver can retry or switch cards.
+        await _reservationController.deleteReservation(reservationId);
+        if (!mounted) return;
+        setState(() => _isBooking = false);
+        await _showPaymentFailed(result.failureMessage);
+        return;
+      }
+
+      // 3. Record the paid booking fee (1-1 with the reservation).
+      await _paymentController.recordBookingFee(
+        reservationId: reservationId,
+        paymentMethodId: card.id,
+        amount: widget.fee,
+        transactionId: result.transactionId,
+      );
+    } catch (_) {
+      // Payment/record errored — roll back so we don't leave an unpaid booking.
+      await _reservationController.deleteReservation(reservationId);
+      if (!mounted) return;
+      setState(() => _isBooking = false);
+      await _showPaymentFailed('Payment failed. Please try again.');
+      return;
+    }
+
+    if (!mounted) return;
+    // 4. Done — show the confirmation screen, then leave the flow.
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReservationConfirmedScreen(
+          chargerName: widget.charger.name,
+          dateLabel: widget.dateLabel,
+          timeLabel: widget.timeLabel,
+          durationLabel: widget.durationLabel,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    Navigator.of(context).pop(ReservationSummaryResult.booked);
+  }
+
+  /// Shows the full-screen payment-failed result, then returns here so the
+  /// driver can retry or change card.
+  Future<void> _showPaymentFailed(String message) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PaymentFailedScreen(message: message),
+      ),
+    );
   }
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
+    );
+  }
+}
+
+/// Bottom sheet listing the user's cards to pick one to pay with. Pops the
+/// chosen [PaymentMethod].
+class _CardPickerSheet extends StatelessWidget {
+  const _CardPickerSheet({required this.cards, required this.selectedId});
+
+  final List<PaymentMethod> cards;
+  final String? selectedId;
+
+  static const Color _primary = Color(0xFF10B981);
+  static const Color _dark = Color(0xFF1F2937);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const Padding(padding: EdgeInsets.only(top: 16)),
+          const Text(
+            'Choose a card',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: _dark,
+            ),
+          ),
+          const Padding(padding: EdgeInsets.only(top: 12)),
+          for (final card in cards) _cardRow(context, card),
+        ],
+      ),
+    );
+  }
+
+  Widget _cardRow(BuildContext context, PaymentMethod card) {
+    final selected = card.id == selectedId;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => Navigator.of(context).pop(card),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Icon(Icons.credit_card, color: _primary, size: 22),
+            const Padding(padding: EdgeInsets.only(left: 12)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${card.brandLabel}  ${card.maskedNumber}',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _dark,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (selected)
+              const Icon(Icons.check_circle, color: _primary, size: 22),
+          ],
+        ),
+      ),
     );
   }
 }
