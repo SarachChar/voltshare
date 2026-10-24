@@ -104,10 +104,11 @@ class ReservationSupabaseService implements ReservationService {
   @override
   Future<List<Reservation>> getReservationsByUser(String userId) async {
     // Embed the related charger's display fields so the Bookings list can show
-    // the charger name, address and power without a second query.
+    // the charger name, address and power without a second query, plus the
+    // driver's review (1-1) to pick "Review" vs "View Review".
     final List<dynamic> data = await _client
         .from('reservations')
-        .select('*, ${Reservation.chargerJoin}')
+        .select('*, ${Reservation.chargerJoin}, reviews(*)')
         .eq('user_id', userId)
         .order('start_time', ascending: false);
 

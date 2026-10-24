@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
 
-/// Shown after a charging session has been paid. "Back to Home" returns to
+import 'package:voltshare_app/models/reservation_model.dart';
+import 'package:voltshare_app/screens/leave_review_screen.dart';
+
+/// Shown after a charging session has been paid. "Done" returns to
 /// the root (Home) screen; the back gesture is blocked so the driver can't go
-/// back to the paid bill.
+/// back to the paid bill. "Leave a review" opens the review form for
+/// [reservation] (hidden when it isn't known).
 class ChargingPaymentCompleteScreen extends StatelessWidget {
   const ChargingPaymentCompleteScreen({
     super.key,
     required this.amount,
     required this.energyKwh,
+    this.reservation,
   });
 
   /// Amount charged to the card (THB).
   final double amount;
   final double energyKwh;
+
+  /// The charged booking, used for "Leave a review".
+  final Reservation? reservation;
 
   static const Color _primary = Color(0xFF10B981);
   static const Color _navy = Color(0xFF0F1D3A);
@@ -66,8 +74,9 @@ class ChargingPaymentCompleteScreen extends StatelessWidget {
                     width: double.infinity,
                     height: 58,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.of(context)
-                          .popUntil((route) => route.isFirst),
+                      onPressed: () =>
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _primary,
                         foregroundColor: Colors.white,
@@ -77,7 +86,7 @@ class ChargingPaymentCompleteScreen extends StatelessWidget {
                         ),
                       ),
                       child: const Text(
-                        'Back to Home',
+                        'Done',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -85,25 +94,25 @@ class ChargingPaymentCompleteScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const Padding(padding: EdgeInsets.only(top: 8)),
-                  TextButton(
-                    // Reviews aren't built yet.
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Reviews are coming soon.'),
+                  if (reservation != null) ...[
+                    const Padding(padding: EdgeInsets.only(top: 8)),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              LeaveReviewScreen(reservation: reservation!),
                         ),
-                      );
-                    },
-                    child: const Text(
-                      'Leave a review ⭐',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: _primary,
+                      ),
+                      child: const Text(
+                        'Leave a review ⭐',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: _primary,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

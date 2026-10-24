@@ -130,6 +130,17 @@ curl -s -X POST "https://<project-ref>.supabase.co/functions/v1/mock-charger" -d
 12. `sql/cron/mock_charger_tick.sql`
 13. `sql/cron/cleanup_cron_run_details.sql` – ล้าง log ของ cron ทุกวัน 23:59 เวลาไทย
 
+## ขั้นที่ 8 – Reviews
+
+14. `sql/tables/reviews.sql` – ตาราง + RLS (รีวิวได้ครั้งเดียวต่อ reservation ที่ `completed`, แก้/ลบไม่ได้)
+
+ต้องรันก่อนใช้แอปเวอร์ชันที่มีรีวิว เพราะหน้า Bookings ดึง `reviews(*)` มาด้วย ถ้ายังไม่มีตารางหน้า Bookings จะโหลดไม่ขึ้น
+
+15. `sql/functions/charger_review_summary.sql` – คะแนนเฉลี่ย + จำนวนรีวิวของ charger
+16. `sql/functions/charger_reviews.sql` – รายการรีวิวของ charger (ชื่อคนรีวิวถูก censor ฝั่ง server เช่น `P***`)
+
+ทั้งสองเป็น `security definer` เพราะต้อง join `reviews → reservations → profiles` ซึ่ง user อ่านของคนอื่นไม่ได้ และคืนเฉพาะข้อมูลที่แสดงได้ (ไม่คืนชื่อจริง / user id)
+
 เช็ค:
 ```sql
 select jobname, schedule, active from cron.job;

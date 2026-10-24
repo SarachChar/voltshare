@@ -1,3 +1,5 @@
+import 'package:voltshare_app/models/review_model.dart';
+
 /// A single charger booking, stored in the `reservations` table.
 ///
 /// A reservation ties a driver's profile ([userId] -> `profiles.id`) to a
@@ -38,6 +40,10 @@ class Reservation {
   /// Charger price per kWh (THB) from the join. Null when not joined.
   final double? chargerPricePerKwh;
 
+  /// The driver's review, when the query embedded `reviews(...)`. Null when
+  /// not reviewed (or not embedded).
+  final Review? review;
+
   Reservation({
     required this.id,
     required this.userId,
@@ -55,6 +61,7 @@ class Reservation {
     this.chargerType = '',
     this.chargerConnectorType = '',
     this.chargerPricePerKwh,
+    this.review,
   });
 
   factory Reservation.fromJson(Map<String, dynamic> json) {
@@ -68,9 +75,11 @@ class Reservation {
       chargerId: json['charger_id'] as String? ?? '',
       // start/end are NOT NULL in the DB; fall back to epoch only to stay
       // null-safe if a malformed row ever comes back.
-      startTime: _parseDate(json['start_time']) ??
+      startTime:
+          _parseDate(json['start_time']) ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      endTime: _parseDate(json['end_time']) ??
+      endTime:
+          _parseDate(json['end_time']) ??
           DateTime.fromMillisecondsSinceEpoch(0),
       durationMinutes: (json['duration_minutes'] as num?)?.toInt() ?? 0,
       status: json['status'] as String? ?? 'confirmed',
@@ -83,6 +92,7 @@ class Reservation {
       chargerType: charger?['charger_type'] as String? ?? '',
       chargerConnectorType: charger?['connector_type'] as String? ?? '',
       chargerPricePerKwh: (charger?['price_per_kwh'] as num?)?.toDouble(),
+      review: Review.fromEmbedded(json['reviews']),
     );
   }
 
@@ -147,8 +157,9 @@ class Reservation {
   String get chargerPowerLabel {
     final power = chargerPowerKw;
     if (power == null) return '';
-    final value =
-        power == power.roundToDouble() ? power.toStringAsFixed(0) : '$power';
+    final value = power == power.roundToDouble()
+        ? power.toStringAsFixed(0)
+        : '$power';
     return '$value kW';
   }
 

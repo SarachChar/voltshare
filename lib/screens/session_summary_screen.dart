@@ -133,6 +133,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         builder: (_) => ChargingPaymentCompleteScreen(
           amount: payment?.totalAmount ?? 0,
           energyKwh: _session?.totalEnergyKwh ?? 0,
+          reservation: _session?.reservation,
         ),
       ),
     );

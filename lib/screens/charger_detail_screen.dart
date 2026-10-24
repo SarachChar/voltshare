@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:voltshare_app/components/map_navigation.dart';
+import 'package:voltshare_app/components/review_card.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
+import 'package:voltshare_app/controllers/review_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
+import 'package:voltshare_app/models/review_model.dart';
+import 'package:voltshare_app/screens/charger_reviews_screen.dart';
 import 'package:voltshare_app/screens/photo_viewer_screen.dart';
 import 'package:voltshare_app/screens/reserve_charger_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
+import 'package:voltshare_app/services/review_service.dart';
 
 /// Full-screen charger details view. For now it shows a swipeable image
 /// carousel at the top, the charger's name, and a (non-functional) "Book This
@@ -67,6 +72,18 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
 
   final PageController _businessPageController = PageController();
 
+  final ReviewController _reviewController =
+      ReviewController(ReviewSupabaseService());
+
+  /// Average rating + count (title row) and the latest reviews (Reviews
+  /// section on the Charger info tab).
+  ChargerReviewSummary _reviewSummary = ChargerReviewSummary.empty;
+  List<ChargerReview> _latestReviews = List.empty();
+  bool _isLoadingReviews = true;
+
+  /// How many reviews the details screen previews.
+  static const int _reviewPreviewCount = 3;
+
   /// Same idea as [_currentPage], for the business photo gallery.
   final ValueNotifier<int> _businessPage = ValueNotifier<int>(0);
 
@@ -81,6 +98,40 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
     _loadPromotions();
     _loadBusinesses();
     _loadBusinessImages();
+    _loadReviews();
+  }
+
+  Future<void> _loadReviews() async {
+    try {
+      final results = await Future.wait([
+        _reviewController.fetchChargerReviewSummary(widget.charger.id),
+        _reviewController.fetchChargerReviews(
+          widget.charger.id,
+          limit: _reviewPreviewCount,
+        ),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _reviewSummary = results[0] as ChargerReviewSummary;
+        _latestReviews = results[1] as List<ChargerReview>;
+        _isLoadingReviews = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingReviews = false);
+    }
+  }
+
+  void _openAllReviews() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChargerReviewsScreen(
+          chargerId: widget.charger.id,
+          chargerName: widget.charger.name,
+          summary: _reviewSummary,
+        ),
+      ),
+    );
   }
 
   void _onTabChanged() {
@@ -244,13 +295,24 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            widget.charger.name,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: _dark,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  widget.charger.name,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: _dark,
+                  ),
+                ),
+              ),
+              if (_reviewSummary.hasReviews) ...[
+                const Padding(padding: EdgeInsets.only(left: 12)),
+                _buildRatingBadge(),
+              ],
+            ],
           ),
           if (widget.charger.address.isNotEmpty) ...[
             const Padding(padding: EdgeInsets.only(top: 6)),
@@ -334,6 +396,8 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
           _buildSectionTitle('Opening Hours'),
           const Padding(padding: EdgeInsets.only(top: 8)),
           _buildAvailabilitySection(),
+          const Padding(padding: EdgeInsets.only(top: 24)),
+          _buildReviewsSection(),
         ],
       ),
     );
@@ -775,6 +839,104 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
           child: Icon(icon, color: _dark, size: 22),
         ),
       ),
+    );
+  }
+
+  /// "★ 4.8 (24)" beside the charger name.
+  Widget _buildRatingBadge() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Semantics(
+        label: 'Rated ${_reviewSummary.averageLabel} out of 5 from '
+            '${_reviewSummary.reviewCount} reviews',
+        child: ExcludeSemantics(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.star_rounded,
+                color: Color(0xFFF59E0B),
+                size: 22,
+              ),
+              const Padding(padding: EdgeInsets.only(left: 4)),
+              Text(
+                _reviewSummary.averageLabel,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: _dark,
+                ),
+              ),
+              const Padding(padding: EdgeInsets.only(left: 4)),
+              Text(
+                '(${_reviewSummary.reviewCount})',
+                style: const TextStyle(fontSize: 15, color: _muted),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// "Reviews" header with "All N >" and the latest few review cards.
+  Widget _buildReviewsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _buildSectionTitle('Reviews')),
+            if (_reviewSummary.reviewCount > 0)
+              TextButton(
+                onPressed: _openAllReviews,
+                style: TextButton.styleFrom(
+                  foregroundColor: _primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'All ${_reviewSummary.reviewCount}',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right, size: 22),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        const Padding(padding: EdgeInsets.only(top: 8)),
+        if (_isLoadingReviews)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator(color: _primary)),
+          )
+        else if (_latestReviews.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
+            ),
+            child: Text(
+              'No reviews yet.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+            ),
+          )
+        else
+          for (final review in _latestReviews) ...[
+            ReviewCard(review: review),
+            const Padding(padding: EdgeInsets.only(top: 12)),
+          ],
+      ],
     );
   }
 

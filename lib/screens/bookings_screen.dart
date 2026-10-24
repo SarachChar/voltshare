@@ -3,8 +3,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voltshare_app/controllers/charging_session_controller.dart';
 import 'package:voltshare_app/controllers/reservation_controller.dart';
+import 'package:voltshare_app/controllers/review_controller.dart';
 import 'package:voltshare_app/models/reservation_model.dart';
 import 'package:voltshare_app/screens/charging_session_screen.dart';
+import 'package:voltshare_app/screens/leave_review_screen.dart';
 import 'package:voltshare_app/screens/plug_in_screen.dart';
 import 'package:voltshare_app/services/reservation_service.dart';
 
@@ -13,7 +15,7 @@ import 'package:voltshare_app/services/reservation_service.dart';
 ///
 /// "Start" re-checks the booking (still confirmed, slot has begun) and then
 /// opens the plug-in prompt → charging session. Cancel (X) is wired up;
-/// "Review" is still a visual placeholder.
+/// "Review" opens the review form, or the submitted review read-only.
 class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key, this.controller});
 
@@ -84,12 +86,14 @@ class _BookingsScreenState extends State<BookingsScreen> {
     // The charging flow replaces routes, so we can't rely on awaiting the
     // pushed route to know when to refresh; listen for its changes instead.
     ChargingSessionController.changes.addListener(_onChargingChanged);
+    ReviewController.changes.addListener(_onChargingChanged);
     _load();
   }
 
   @override
   void dispose() {
     ChargingSessionController.changes.removeListener(_onChargingChanged);
+    ReviewController.changes.removeListener(_onChargingChanged);
     super.dispose();
   }
 
@@ -455,7 +459,13 @@ class _BookingsScreenState extends State<BookingsScreen> {
           _cancelAction(r),
         ];
       case 'completed':
-        return [_softAction('Review')];
+        // Not reviewed yet: write one. Reviewed: open it read-only.
+        return [
+          _softAction(
+            r.review == null ? 'Review' : 'View Review',
+            onTap: () => _openReview(r),
+          ),
+        ];
       case 'cancelled':
         return const [];
       default:
@@ -545,10 +555,10 @@ class _BookingsScreenState extends State<BookingsScreen> {
       final message = latest == null
           ? 'This booking no longer exists.'
           : latest.isCancelled
-              ? 'This booking was cancelled because charging wasn\'t started '
-                  'within 15 minutes of the booked start time. The booking '
-                  'fee is non-refundable.'
-              : 'This booking is already ${latest.status}.';
+          ? 'This booking was cancelled because charging wasn\'t started '
+                'within 15 minutes of the booked start time. The booking '
+                'fee is non-refundable.'
+          : 'This booking is already ${latest.status}.';
       await _showStartError(message);
       // Refresh so the card reflects its real status.
       if (mounted) await _load();
@@ -619,22 +629,36 @@ class _BookingsScreenState extends State<BookingsScreen> {
     );
   }
 
-  Widget _softAction(String label) {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 22),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: _primary.withValues(alpha: 0.12),
+  Widget _softAction(String label, {VoidCallback? onTap}) {
+    return Material(
+      color: _primary.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
         borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w800,
-          color: _primary,
+        onTap: onTap,
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 22),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: _primary,
+            ),
+          ),
         ),
+      ),
+    );
+  }
+
+  /// Opens the review screen: a form if [r] isn't reviewed yet, otherwise
+  /// the existing review read-only.
+  Future<void> _openReview(Reservation r) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LeaveReviewScreen(reservation: r, review: r.review),
       ),
     );
   }
