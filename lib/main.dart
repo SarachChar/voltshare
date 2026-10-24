@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'components/pending_session_gate.dart';
 import 'controllers/profile_controller.dart';
 import 'models/profile_provider.dart';
 import 'screens/auth_screen.dart';
@@ -160,7 +161,9 @@ class _ProfileGateState extends State<ProfileGate> {
           }
           final hasProfile = snapshot.data ?? false;
           if (hasProfile) {
-            return const HomeScreen();
+            // Forces the driver back into an unfinished charging session or
+            // an unpaid charging bill.
+            return const PendingSessionGate(child: HomeScreen());
           }
           return CompleteProfileScreen(onCompleted: _onProfileCompleted);
         },

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:voltshare_app/controllers/charging_session_controller.dart';
 import 'package:voltshare_app/controllers/reservation_controller.dart';
 import 'package:voltshare_app/models/reservation_model.dart';
+import 'package:voltshare_app/screens/charging_session_screen.dart';
 import 'package:voltshare_app/screens/plug_in_screen.dart';
 import 'package:voltshare_app/services/reservation_service.dart';
 
@@ -79,7 +81,20 @@ class _BookingsScreenState extends State<BookingsScreen> {
   @override
   void initState() {
     super.initState();
+    // The charging flow replaces routes, so we can't rely on awaiting the
+    // pushed route to know when to refresh; listen for its changes instead.
+    ChargingSessionController.changes.addListener(_onChargingChanged);
     _load();
+  }
+
+  @override
+  void dispose() {
+    ChargingSessionController.changes.removeListener(_onChargingChanged);
+    super.dispose();
+  }
+
+  void _onChargingChanged() {
+    if (mounted) _load();
   }
 
   Future<void> _load() async {
@@ -499,7 +514,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
     String? timingError;
     try {
       latest = await _controller.fetchReservationById(r.id);
-      if (latest != null && latest.isConfirmed) {
+      if (latest != null && latest.isConfirmed && !latest.isCharging) {
         timingError = await _startBlockedReason(latest);
       }
     } catch (_) {
@@ -513,6 +528,17 @@ class _BookingsScreenState extends State<BookingsScreen> {
     }
     if (!mounted) return;
     setState(() => _startingId = null);
+
+    // 0. Already charging (e.g. left the app mid-session): resume directly.
+    if (latest != null && latest.isCharging) {
+      final reservation = latest.chargerName.isNotEmpty ? latest : r;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChargingSessionScreen(reservation: reservation),
+        ),
+      );
+      return;
+    }
 
     // 1. Still confirmed?
     if (latest == null || !latest.isConfirmed) {
@@ -541,7 +567,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PlugInScreen(reservation: reservation)),
     );
-    if (mounted) await _load();
   }
 
   /// Returns why [r] can't start charging yet, or null if it can. Only covers

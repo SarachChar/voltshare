@@ -107,7 +107,7 @@ class ReservationSupabaseService implements ReservationService {
     // the charger name, address and power without a second query.
     final List<dynamic> data = await _client
         .from('reservations')
-        .select('*, chargers(name, address, power_kw)')
+        .select('*, ${Reservation.chargerJoin}')
         .eq('user_id', userId)
         .order('start_time', ascending: false);
 
@@ -120,7 +120,7 @@ class ReservationSupabaseService implements ReservationService {
   Future<Reservation?> getReservationById(String id) async {
     final data = await _client
         .from('reservations')
-        .select('*, chargers(name, address, power_kw)')
+        .select('*, ${Reservation.chargerJoin}')
         .eq('id', id)
         .maybeSingle();
 

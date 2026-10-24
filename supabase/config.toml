@@ -1,0 +1,24 @@
+# Supabase CLI config (deploy settings only; local dev stack not used).
+project_id = "voltshare_app"
+
+# Every edge function requires a valid JWT at the gateway. The charger-side
+# functions (mock-charger, ocpp-meter-values) additionally check in code that
+# the JWT's role is service_role, which is only safe because the gateway has
+# verified the signature first. Keep verify_jwt = true for them.
+[functions.mock-payment]
+verify_jwt = true
+
+[functions.ocpp-remote-start]
+verify_jwt = true
+
+[functions.ocpp-remote-stop]
+verify_jwt = true
+
+[functions.pay-charging-session]
+verify_jwt = true
+
+[functions.ocpp-meter-values]
+verify_jwt = true
+
+[functions.mock-charger]
+verify_jwt = true

@@ -8,10 +8,15 @@ class PaymentFailedScreen extends StatelessWidget {
   const PaymentFailedScreen({
     super.key,
     required this.message,
+    this.detail = 'Your booking was not created. Please try again or use a '
+        'different card.',
   });
 
   /// User-facing reason for the failure (e.g. "insufficient funds").
   final String message;
+
+  /// Secondary line explaining what happens next.
+  final String detail;
 
   static const Color _danger = Color(0xFFDC2626);
   static const Color _dark = Color(0xFF1F2937);
@@ -55,8 +60,7 @@ class PaymentFailedScreen extends StatelessWidget {
                         ),
                         const Padding(padding: EdgeInsets.only(top: 12)),
                         Text(
-                          'Your booking was not created. Please try again or '
-                          'use a different card.',
+                          detail,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 15,

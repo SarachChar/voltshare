@@ -20,8 +20,9 @@
 --     updated_at current on every row change.
 --
 -- NOTES
---   - amount is stored as an integer (smallest currency unit, e.g. satang/cents)
---     and must be >= 0.
+--   - amount is in THB (baht). It's an integer because booking fees are always
+--     whole baht; must be >= 0. Deducted from the charging bill
+--     (session_payments.booking_fee_deducted) and never refunded.
 --   - status is one of: 'paid', 'refunded' (default 'paid').
 -- =============================================================================
 

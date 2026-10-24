@@ -28,6 +28,16 @@ class Reservation {
   final String chargerAddress;
   final double? chargerPowerKw;
 
+  /// Current type from the joined charger, e.g. "AC" / "DC". Empty if not
+  /// joined.
+  final String chargerType;
+
+  /// Connector from the joined charger, e.g. "Type 2". Empty if not joined.
+  final String chargerConnectorType;
+
+  /// Charger price per kWh (THB) from the join. Null when not joined.
+  final double? chargerPricePerKwh;
+
   Reservation({
     required this.id,
     required this.userId,
@@ -42,6 +52,9 @@ class Reservation {
     this.chargerName = '',
     this.chargerAddress = '',
     this.chargerPowerKw,
+    this.chargerType = '',
+    this.chargerConnectorType = '',
+    this.chargerPricePerKwh,
   });
 
   factory Reservation.fromJson(Map<String, dynamic> json) {
@@ -67,6 +80,9 @@ class Reservation {
       chargerName: charger?['name'] as String? ?? '',
       chargerAddress: charger?['address'] as String? ?? '',
       chargerPowerKw: (charger?['power_kw'] as num?)?.toDouble(),
+      chargerType: charger?['charger_type'] as String? ?? '',
+      chargerConnectorType: charger?['connector_type'] as String? ?? '',
+      chargerPricePerKwh: (charger?['price_per_kwh'] as num?)?.toDouble(),
     );
   }
 
@@ -76,6 +92,16 @@ class Reservation {
     if (value is DateTime) return value.toLocal();
     return DateTime.tryParse(value.toString())?.toLocal();
   }
+
+  /// PostgREST embed for the charger fields this model reads. Use as
+  /// `.select('*, ${Reservation.chargerJoin}')`.
+  static const String chargerJoin =
+      'chargers(name, address, power_kw, charger_type, connector_type, '
+      'price_per_kwh)';
+
+  /// Charger spec line, e.g. "22 kW AC".
+  String get chargerSpecLabel =>
+      [chargerPowerLabel, chargerType].where((p) => p.isNotEmpty).join(' ');
 
   bool get isConfirmed => status == 'confirmed';
   bool get isCompleted => status == 'completed';

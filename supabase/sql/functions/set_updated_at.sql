@@ -11,6 +11,8 @@
 --
 -- USED BY (BEFORE UPDATE ... FOR EACH ROW triggers)
 --   - booking_fee_set_updated_at      on public.booking_fee
+--   - charging_sessions_set_updated_at on public.charging_sessions
+--   - session_payments_set_updated_at on public.session_payments
 --   - payment_methods_set_updated_at  on public.payment_methods
 --   - reservations_set_updated_at     on public.reservations
 --
