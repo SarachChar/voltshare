@@ -798,6 +798,10 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
     // charger can't be left behind.
     return PopScope(
       canPop: !_isSubmitting,
+      // Tapping anywhere outside a text field closes the keyboard.
+      child: GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      behavior: HitTestBehavior.translucent,
       child: Scaffold(
         backgroundColor: _bg,
         body: Stack(
@@ -814,6 +818,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
             if (_isSubmitting) _buildSubmittingOverlay(),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1665,6 +1670,8 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
 
   Widget _buildBusinessStep() {
     return ListView(
+      // Dragging the form closes the keyboard.
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.all(16),
       children: [
         _buildBusinessIntroCard(),
@@ -2049,12 +2056,17 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
           const Padding(padding: EdgeInsets.only(top: 14)),
           TextField(
             controller: _businessNameController,
+            // Keyboard "Next" jumps to the description.
+            textInputAction: TextInputAction.next,
             decoration: _inputDecoration('Business name (e.g. Café de Charge)'),
           ),
           const Padding(padding: EdgeInsets.only(top: 12)),
           TextField(
             controller: _businessDescriptionController,
             maxLines: 4,
+            // Keyboard "Done" closes it.
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => FocusScope.of(context).unfocus(),
             decoration:
                 _inputDecoration('Tell drivers what your business offers…'),
           ),
@@ -2063,7 +2075,10 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _cancelNewBusinessForm,
+                  onPressed: () {
+                    FocusScope.of(context).unfocus();
+                    _cancelNewBusinessForm();
+                  },
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _dark,
                     side: const BorderSide(color: _fieldBorder),
@@ -2082,7 +2097,10 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
               const Padding(padding: EdgeInsets.only(left: 12)),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: _commitNewBusiness,
+                  onPressed: () {
+                    FocusScope.of(context).unfocus();
+                    _commitNewBusiness();
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _primary,
                     foregroundColor: Colors.white,
