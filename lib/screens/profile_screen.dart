@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:voltshare_app/app_version.dart';
 import 'package:voltshare_app/models/profile_provider.dart';
 import 'package:voltshare_app/screens/host_dashboard_screen.dart';
 import 'package:voltshare_app/screens/payment_methods_screen.dart';
@@ -93,6 +94,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _buildSwitchToHostButton(),
               const Padding(padding: EdgeInsets.only(top: 16)),
               _buildLogoutButton(),
+              const Padding(padding: EdgeInsets.only(top: 24)),
+              Text(
+                AppVersion.display,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              ),
             ],
           ),
         ),

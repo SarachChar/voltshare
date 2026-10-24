@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -16,6 +17,10 @@ import 'supabase_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Lock the app to portrait. Native configs (Info.plist / AndroidManifest)
+  // also restrict this so the launch screen never appears in landscape.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
   await Supabase.initialize(
     url: SupabaseConfig.supabaseUrl,
