@@ -8,6 +8,7 @@ import 'package:voltshare_app/models/reservation_model.dart';
 import 'package:voltshare_app/screens/charging_session_screen.dart';
 import 'package:voltshare_app/screens/leave_review_screen.dart';
 import 'package:voltshare_app/screens/plug_in_screen.dart';
+import 'package:voltshare_app/screens/session_detail_screen.dart';
 import 'package:voltshare_app/services/reservation_service.dart';
 
 /// "My Bookings" tab. Lists the signed-in driver's reservations with filter
@@ -294,10 +295,9 @@ class _BookingsScreenState extends State<BookingsScreen> {
   // --- Booking card ---------------------------------------------------------
 
   Widget _bookingCard(Reservation r) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.withValues(alpha: 0.15)),
       ),
@@ -311,6 +311,26 @@ class _BookingsScreenState extends State<BookingsScreen> {
           _cardFooter(r),
         ],
       ),
+    );
+
+    // Completed cards open the session summary; the Review button inside
+    // keeps its own tap.
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: r.isCompleted
+          ? InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => _openSessionDetail(r),
+              child: card,
+            )
+          : card,
+    );
+  }
+
+  void _openSessionDetail(Reservation r) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => SessionDetailScreen(reservation: r)),
     );
   }
 
@@ -400,8 +420,15 @@ class _BookingsScreenState extends State<BookingsScreen> {
       child: Column(
         children: [
           _statRow('Date', r.dateLabel),
-          _statRow('Time', r.timeRangeLabel),
-          _statRow('Duration', r.durationLabel),
+          // Completed: actual charging times + cost instead of the booked
+          // slot and duration.
+          if (r.isCompleted) ...[
+            _statRow('Time', r.sessionTimeRangeLabel),
+            _statRow('Charging cost', r.chargingCostLabel),
+          ] else ...[
+            _statRow('Time', r.timeRangeLabel),
+            _statRow('Duration', r.durationLabel),
+          ],
         ],
       ),
     );

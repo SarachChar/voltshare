@@ -44,6 +44,15 @@ class Reservation {
   /// not reviewed (or not embedded).
   final Review? review;
 
+  /// Actual charging times from the embedded `charging_sessions` row. Null
+  /// when charging never started (or the session wasn't embedded).
+  final DateTime? sessionStartedAt;
+  final DateTime? sessionEndedAt;
+
+  /// Energy charge of the session (THB, `session_payments.energy_amount`).
+  /// Null until the session has stopped and been billed.
+  final double? chargingCost;
+
   Reservation({
     required this.id,
     required this.userId,
@@ -62,12 +71,18 @@ class Reservation {
     this.chargerConnectorType = '',
     this.chargerPricePerKwh,
     this.review,
+    this.sessionStartedAt,
+    this.sessionEndedAt,
+    this.chargingCost,
   });
 
   factory Reservation.fromJson(Map<String, dynamic> json) {
     // A joined charger row arrives nested under the `chargers` key (Supabase
     // names the embedded object after the related table).
     final charger = json['chargers'] as Map<String, dynamic>?;
+    // 1-1 embeds: PostgREST returns an object, tolerate a list too.
+    final session = _embeddedOne(json['charging_sessions']);
+    final payment = _embeddedOne(session?['session_payments']);
 
     return Reservation(
       id: json['id'] as String,
@@ -93,7 +108,34 @@ class Reservation {
       chargerConnectorType: charger?['connector_type'] as String? ?? '',
       chargerPricePerKwh: (charger?['price_per_kwh'] as num?)?.toDouble(),
       review: Review.fromEmbedded(json['reviews']),
+      sessionStartedAt: _parseDate(session?['started_at']),
+      sessionEndedAt: _parseDate(session?['ended_at']),
+      chargingCost: (payment?['energy_amount'] as num?)?.toDouble(),
     );
+  }
+
+  static Map<String, dynamic>? _embeddedOne(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is List && value.isNotEmpty && value.first is Map) {
+      return Map<String, dynamic>.from(value.first as Map);
+    }
+    return null;
+  }
+
+  /// Actual charging time range, e.g. "16:04 - 17:21". Falls back to the
+  /// booked [timeRangeLabel] when the session times aren't known.
+  String get sessionTimeRangeLabel {
+    final start = sessionStartedAt;
+    final end = sessionEndedAt;
+    if (start == null || end == null) return timeRangeLabel;
+    return '${_hhmm(start)} - ${_hhmm(end)}';
+  }
+
+  /// Charging cost, e.g. "฿99.84"; "-" when not billed.
+  String get chargingCostLabel {
+    final cost = chargingCost;
+    if (cost == null) return '-';
+    return '฿${cost.toStringAsFixed(2)}';
   }
 
   /// Parses a DB timestamp (stored as UTC) into local device time.
