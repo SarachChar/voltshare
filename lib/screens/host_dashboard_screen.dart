@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
+import 'package:voltshare_app/controllers/host_revenue_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
+import 'package:voltshare_app/models/host_revenue_model.dart';
 import 'package:voltshare_app/screens/add_charger_screen.dart';
+import 'package:voltshare_app/screens/host_revenue_tab.dart';
 import 'package:voltshare_app/services/charger_service.dart';
+import 'package:voltshare_app/services/host_revenue_service.dart';
 
 class HostDashboardScreen extends StatefulWidget {
   const HostDashboardScreen({super.key, this.controller});
@@ -48,9 +52,33 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
   /// Charger ids whose promotions are currently loading.
   final Set<String> _loadingPromotions = {};
 
-  // Fixed mock header stats for now.
-  static const String _totalEarned = '฿9,146';
-  static const String _sessions = '59';
+  final HostRevenueController _revenueController =
+      HostRevenueController(HostRevenueSupabaseService());
+
+  /// Current month's revenue, for the header stats and the per-charger
+  /// figures on the My Chargers cards. Null until loaded (or on error).
+  HostRevenue? _currentRevenue;
+
+  /// The current month, shown next to the header / card figures so the host
+  /// knows which month they cover.
+  final DateTime _currentMonth = firstOfMonth(DateTime.now());
+
+  String get _totalEarned =>
+      _currentRevenue == null ? '–' : formatBaht(_currentRevenue!.summary.net);
+
+  String get _sessions => _currentRevenue == null
+      ? '–'
+      : '${_currentRevenue!.summary.sessions}';
+
+  Future<void> _loadCurrentRevenue() async {
+    try {
+      final revenue = await _revenueController.fetchHostRevenue();
+      if (!mounted) return;
+      setState(() => _currentRevenue = revenue);
+    } catch (_) {
+      // Header / cards keep showing "–".
+    }
+  }
 
   /// The host's loaded chargers (status 'available' / 'unavailable'), kept in
   /// state so the header's "ACTIVE" stat can be derived from them. Populated
@@ -75,6 +103,7 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
     super.initState();
     _chargersFuture = _loadChargers();
     _pendingChargersFuture = _loadPendingChargers();
+    _loadCurrentRevenue();
   }
 
   Future<List<Charger>> _loadChargers() {
@@ -103,6 +132,7 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
   /// data settles. Also clears the per-charger toggle overrides so the
   /// switches re-seed from the freshly loaded statuses.
   Future<void> _refreshChargers() async {
+    _loadCurrentRevenue();
     final future = _loadChargers();
     setState(() {
       _chargersFuture = future;
@@ -146,7 +176,7 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
               children: [
                 _buildMyChargersTab(),
                 _buildPendingTab(),
-                const _PlaceholderTab(label: 'Revenue'),
+                const HostRevenueTab(),
               ],
             ),
           ),
@@ -209,11 +239,25 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
             const Padding(padding: EdgeInsets.only(top: 20)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Earned & sessions: ${monthLabel(_currentMonth)}',
+                style: const TextStyle(
+                  color: Color(0xFFD1FAE5),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const Padding(padding: EdgeInsets.only(top: 8)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  _buildStat('TOTAL EARNED', _totalEarned),
-                  _buildStat('SESSIONS', _sessions),
-                  _buildStat('ACTIVE', _active),
+                  // Earned gets the most room (fits "฿999,999.99" on one
+                  // line); sessions / active only need a few digits.
+                  _buildStat('TOTAL EARNED', _totalEarned, flex: 5),
+                  _buildStat('SESSIONS', _sessions, flex: 2),
+                  _buildStat('ACTIVE', _active, flex: 2),
                 ],
               ),
             ),
@@ -240,8 +284,9 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
     );
   }
 
-  Widget _buildStat(String label, String value) {
+  Widget _buildStat(String label, String value, {int flex = 1}) {
     return Expanded(
+      flex: flex,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -255,12 +300,19 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
             ),
           ),
           const Padding(padding: EdgeInsets.only(top: 4)),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
+          // Never wraps: shrinks to fit if the value is still too wide
+          // (narrow screens / large text settings).
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
@@ -726,12 +778,9 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
   Widget _buildChargerCard(Charger charger) {
     final bool isActive =
         _activeById[charger.id] ?? (charger.status != 'unavailable');
-    // Mocked per-charger figures (not yet in the chargers table). These are
-    // fixed to the charger's original status so the toggle doesn't change them.
-    final bool wasActive = charger.status != 'unavailable';
-    final int sessions = wasActive ? 47 : 12;
-    final int gross = wasActive ? 8420 : 2340;
-    final int net = (gross * 0.85).round();
+    // Current month's figures for this charger (zeros until loaded).
+    final revenue = _currentRevenue?.forCharger(charger.id);
+    String money(double? v) => revenue == null ? '–' : formatBaht(v ?? 0);
 
     final bool expanded = _expandedPromotions.contains(charger.id);
 
@@ -788,11 +837,14 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
                 const Padding(padding: EdgeInsets.only(top: 16)),
                 Row(
                   children: [
-                    _buildMetric('SESSIONS', '$sessions'),
+                    _buildMetric(
+                      'SESSIONS',
+                      revenue == null ? '–' : '${revenue.sessions}',
+                    ),
                     const Padding(padding: EdgeInsets.only(left: 10)),
-                    _buildMetric('GROSS', '฿${_formatMoney(gross)}'),
+                    _buildMetric('GROSS', money(revenue?.gross)),
                     const Padding(padding: EdgeInsets.only(left: 10)),
-                    _buildMetric('NET (-15%)', '฿${_formatMoney(net)}'),
+                    _buildMetric('NET (-15%)', money(revenue?.net)),
                   ],
                 ),
                 const Padding(padding: EdgeInsets.only(top: 12)),
@@ -1306,16 +1358,6 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
         ? value.toStringAsFixed(0)
         : value.toString();
   }
-
-  static String _formatMoney(int value) {
-    final str = value.toString();
-    final buffer = StringBuffer();
-    for (int i = 0; i < str.length; i++) {
-      if (i > 0 && (str.length - i) % 3 == 0) buffer.write(',');
-      buffer.write(str[i]);
-    }
-    return buffer.toString();
-  }
 }
 
 /// View-model that maps a pending charger's `status` onto the 4-step approval
@@ -1405,28 +1447,6 @@ class _PendingProgress {
     return _greenFaint;
   }
 }
-
-class _PlaceholderTab extends StatelessWidget {
-  const _PlaceholderTab({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 16,
-          color: Colors.grey.shade500,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-
 
 /// Callback used by [_CreatePromotionSheet] to persist a new promotion. Returns
 /// the created row so the sheet can hand it back to the dashboard.

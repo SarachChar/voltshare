@@ -139,7 +139,13 @@ curl -s -X POST "https://<project-ref>.supabase.co/functions/v1/mock-charger" -d
 15. `sql/functions/charger_review_summary.sql` – คะแนนเฉลี่ย + จำนวนรีวิวของ charger
 16. `sql/functions/charger_reviews.sql` – รายการรีวิวของ charger (ชื่อคนรีวิวถูก censor ฝั่ง server เช่น `P***`)
 
-ทั้งสองเป็น `security definer` เพราะต้อง join `reviews → reservations → profiles` ซึ่ง user อ่านของคนอื่นไม่ได้ และคืนเฉพาะข้อมูลที่แสดงได้ (ไม่คืนชื่อจริง / user id)
+## ขั้นที่ 9 – Host revenue
+
+17. `sql/functions/host_revenue.sql` – รายได้ของ host (tab Revenue, header และการ์ดใน My Chargers) นับเฉพาะบิล `paid` ไม่รวม booking fee เดือนนับจาก `charging_sessions.ended_at` เวลาไทย
+
+---
+
+ฟังก์ชันรีวิวทั้งสองเป็น `security definer` เพราะต้อง join `reviews → reservations → profiles` ซึ่ง user อ่านของคนอื่นไม่ได้ และคืนเฉพาะข้อมูลที่แสดงได้ (ไม่คืนชื่อจริง / user id)
 
 เช็ค:
 ```sql
