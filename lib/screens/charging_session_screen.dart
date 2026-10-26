@@ -367,6 +367,13 @@ class _ChargingSessionScreenState extends State<ChargingSessionScreen>
                   style: const TextStyle(fontSize: 15, color: _muted),
                 ),
               ],
+              // Booked slot, so the driver knows when charging must end.
+              const Padding(padding: EdgeInsets.only(top: 6)),
+              Text(
+                'Booked ${_reservation.timeRangeLabel}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 15, color: _muted),
+              ),
             ],
           ),
         ),
