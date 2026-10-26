@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:voltshare_app/app_version.dart';
 import 'package:voltshare_app/utils/password_policy.dart';
 
 /// Deep link used by Supabase to return to the app after the user taps the
@@ -139,21 +140,44 @@ class _AuthScreenState extends State<AuthScreen> {
       backgroundColor: _Brand.surface,
       body: SafeArea(
         top: false,
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              _buildHeader(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+        // The content is at least screen-tall so the version line sits at
+        // the bottom of the screen; on short screens (or with the keyboard
+        // open) it simply follows the form and scrolls with it.
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: IntrinsicHeight(
                 child: Column(
                   children: [
-                    _buildTabSwitch(),
-                    const Padding(padding: EdgeInsets.only(top: 28)),
-                    _buildForm(),
+                    _buildHeader(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+                      child: Column(
+                        children: [
+                          _buildTabSwitch(),
+                          const Padding(padding: EdgeInsets.only(top: 28)),
+                          _buildForm(),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    // Same build info as the Profile screen.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                      child: Text(
+                        AppVersion.display,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
