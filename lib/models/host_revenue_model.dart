@@ -45,11 +45,18 @@ class RevenueSummary {
   final double platformFee;
   final int sessions;
 
+  /// Paid booking fees for bookings starting this month (host keeps 100%,
+  /// cancelled bookings included). Not part of [gross] / [net].
+  final double reservationFee;
+  final int reservationCount;
+
   const RevenueSummary({
     this.gross = 0,
     this.net = 0,
     this.platformFee = 0,
     this.sessions = 0,
+    this.reservationFee = 0,
+    this.reservationCount = 0,
   });
 
   factory RevenueSummary.fromJson(Map<String, dynamic> json) => RevenueSummary(
@@ -57,6 +64,8 @@ class RevenueSummary {
         net: _num(json['net']),
         platformFee: _num(json['platform_fee']),
         sessions: (json['sessions'] as num?)?.toInt() ?? 0,
+        reservationFee: _num(json['reservation_fee']),
+        reservationCount: (json['reservation_count'] as num?)?.toInt() ?? 0,
       );
 }
 

@@ -141,7 +141,7 @@ curl -s -X POST "https://<project-ref>.supabase.co/functions/v1/mock-charger" -d
 
 ## ขั้นที่ 9 – Host revenue
 
-17. `sql/functions/host_revenue.sql` – รายได้ของ host (tab Revenue, header และการ์ดใน My Chargers) นับเฉพาะบิล `paid` ไม่รวม booking fee เดือนนับจาก `charging_sessions.ended_at` เวลาไทย
+17. `sql/functions/host_revenue.sql` – รายได้ของ host (tab Revenue, header และการ์ดใน My Chargers) นับเฉพาะบิล `paid` (เดือนนับจาก `charging_sessions.ended_at` เวลาไทย) ส่วนค่าจองแสดงแยกในกล่อง Reservation Fee: `booking_fee` ที่ `paid` รวม booking ที่ถูกยกเลิก host ได้เต็มจำนวน เดือนนับจาก `reservations.start_time` เวลาไทย
 
 ---
 

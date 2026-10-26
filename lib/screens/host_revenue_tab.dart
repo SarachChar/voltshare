@@ -7,7 +7,7 @@ import 'package:voltshare_app/services/host_revenue_service.dart';
 /// Host dashboard → Revenue tab.
 ///
 ///   1. Month dropdown (current month + 5 before).
-///   2. Gross / Net payout / Platform fee / Sessions for the picked month.
+///   2. Gross / Net payout / Reservation fee / Sessions for the picked month.
 ///   3. By Charger for the picked month.
 ///   4. Monthly Revenue chart: the 6 latest months (independent of the
 ///      picker; tapping a bar picks that month).
@@ -207,9 +207,10 @@ class _HostRevenueTabState extends State<HostRevenueTab>
           children: [
             Expanded(
               child: _statCard(
-                label: 'PLATFORM FEE',
-                value: formatBaht(s.platformFee),
-                caption: '15% of gross',
+                label: 'RESERVATION FEE',
+                value: formatBaht(s.reservationFee),
+                caption: '${s.reservationCount} '
+                    'booking${s.reservationCount == 1 ? '' : 's'}',
                 background: const Color(0xFFFEF3C7),
                 border: const Color(0xFFFDE68A),
                 valueColor: const Color(0xFF92400E),

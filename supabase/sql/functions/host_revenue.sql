@@ -13,13 +13,21 @@
 --   - A session belongs to the month it STOPPED charging
 --     (charging_sessions.ended_at), in Bangkok time.
 --
+-- RESERVATION FEES (separate figure, NOT in gross / net / by_charger / monthly)
+--   - booking_fee rows with status = 'paid' on the host's chargers, including
+--     cancelled bookings (the fee is non-refundable and goes to the host).
+--   - The host keeps the whole fee (no platform cut).
+--   - A fee belongs to the month of the BOOKED START (reservations.start_time),
+--     in Bangkok time.
+--
 -- PARAMETERS
 --   p_month: any date in the month to summarise (null = current month).
 --
 -- RETURNS jsonb
 --   {
 --     "month":   "2026-07-01",                       -- selected month
---     "summary": { "gross", "net", "platform_fee", "sessions" },
+--     "summary": { "gross", "net", "platform_fee", "sessions",
+--                  "reservation_fee", "reservation_count" },
 --     "by_charger": [                                -- selected month
 --       { "charger_id", "name", "sessions", "gross", "net" }, ...
 --     ],                                             -- every live charger of
@@ -75,6 +83,17 @@ as $$
     from paid p, params
     where p.month = params.sel_month
   ),
+  fees as (
+    select bf.amount
+    from booking_fee bf
+    join reservations r on r.id = bf.reservation_id
+    join chargers c on c.id = r.charger_id
+    cross join params
+    where c.host_id = auth.uid()
+      and bf.status = 'paid'
+      and date_trunc('month', r.start_time at time zone 'Asia/Bangkok')
+          = params.sel_month
+  ),
   by_charger as (
     select
       c.id as charger_id,
@@ -110,7 +129,9 @@ as $$
         'gross', coalesce(sum(total_amount), 0),
         'net', coalesce(sum(host_amount), 0),
         'platform_fee', coalesce(sum(platform_amount), 0),
-        'sessions', count(*)
+        'sessions', count(*),
+        'reservation_fee', (select coalesce(sum(amount), 0) from fees),
+        'reservation_count', (select count(*) from fees)
       )
       from sel
     ),
