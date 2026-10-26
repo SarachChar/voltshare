@@ -19,6 +19,11 @@
 --   - status is one of: review, setup, available, unavailable, rejected
 --     (default 'available'), enforced by a check constraint.
 --   - price_per_kwh and power_kw are numeric(10,2).
+--   - mock_error_code: TEST SWITCH for the mock charger (ocpp-status edge
+--     function). Null = connector Available; set to an OCPP errorCode
+--     (e.g. 'GroundFailure') = Unavailable, so "I've Plugged In" cancels the
+--     booking and refunds its fee (refund_booking_fee).
+--     Not read by the app. Added with the ALTER at the bottom of this file.
 -- =============================================================================
 
 create table public.chargers (
@@ -52,3 +57,23 @@ create table public.chargers (
     )
   )
 ) TABLESPACE pg_default;
+
+-- -----------------------------------------------------------------------------
+-- Mock charger status switch (run once in the SQL Editor).
+--   update chargers set mock_error_code = 'GroundFailure' where id = '<uuid>';
+--   update chargers set mock_error_code = null            where id = '<uuid>';
+-- -----------------------------------------------------------------------------
+alter table public.chargers
+  add column if not exists mock_error_code character varying(40) null;
+
+alter table public.chargers
+  add constraint chargers_mock_error_code_valid check (
+    mock_error_code is null
+    or (mock_error_code)::text = any (array[
+      'ConnectorLockFailure', 'EVCommunicationError', 'GroundFailure',
+      'HighTemperature', 'InternalError', 'LocalListConflict', 'OtherError',
+      'OverCurrentFailure', 'PowerMeterFailure', 'PowerSwitchFailure',
+      'ReaderFailure', 'ResetFailure', 'UnderVoltage', 'OverVoltage',
+      'WeakSignal'
+    ]::text[])
+  );

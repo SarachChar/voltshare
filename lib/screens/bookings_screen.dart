@@ -393,6 +393,25 @@ class _BookingsScreenState extends State<BookingsScreen> {
         bg = _chipBg;
         fg = _muted;
     }
+    final badge = _badge(_capitalize(r.status), bg, fg);
+    if (!(r.isCancelled && r.isFeeRefunded)) return badge;
+
+    // Cancelled because the charger was unavailable: fee was refunded.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        badge,
+        const Padding(padding: EdgeInsets.only(top: 6)),
+        _badge(
+          'Refunded',
+          _primary.withValues(alpha: 0.15),
+          const Color(0xFF0F8A5F),
+        ),
+      ],
+    );
+  }
+
+  Widget _badge(String label, Color bg, Color fg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -400,7 +419,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
-        _capitalize(r.status),
+        label,
         style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: fg),
       ),
     );

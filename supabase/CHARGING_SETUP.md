@@ -108,6 +108,8 @@ supabase functions deploy ocpp-remote-start    --use-api
 supabase functions deploy ocpp-remote-stop     --use-api
 supabase functions deploy pay-charging-session --use-api
 supabase functions deploy pay-booking-fee      --use-api
+supabase functions deploy ocpp-status          --use-api
+supabase functions deploy refund-booking-fee   --use-api
 supabase functions deploy ocpp-meter-values    --use-api
 supabase functions deploy mock-charger         --use-api
 ```
@@ -139,6 +141,15 @@ curl -s -X POST "https://<project-ref>.supabase.co/functions/v1/mock-charger" -d
 
 15. `sql/functions/charger_review_summary.sql` – คะแนนเฉลี่ย + จำนวนรีวิวของ charger
 16. `sql/functions/charger_reviews.sql` – รายการรีวิวของ charger (ชื่อคนรีวิวถูก censor ฝั่ง server เช่น `P***`)
+
+## ขั้นที่ 10 – Mock charger status (ปุ่ม I've Plugged In)
+
+18. รันส่วน `alter table` ท้ายไฟล์ `sql/tables/chargers.sql` (เพิ่มคอลัมน์ `mock_error_code`) **ต้องรันก่อนใช้แอป** ไม่งั้น `ocpp-status` error และกด I've Plugged In ไม่ผ่าน
+
+19. รันส่วน `alter table` ท้ายไฟล์ `sql/tables/booking_fee.sql` (เพิ่ม `refunded_at`, `refund_transaction_id`)
+20. `sql/functions/refund_booking_fee.sql`
+
+ทดสอบ: `update chargers set mock_error_code = 'GroundFailure' where id = '<uuid>';` → กด I've Plugged In → booking ถูกยกเลิก + คืนค่าจอง + หน้า Charger Unavailable / ตั้งกลับเป็น `null` = ใช้ได้ปกติ
 
 ## ขั้นที่ 9 – Host revenue
 

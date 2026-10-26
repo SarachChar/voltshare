@@ -53,6 +53,9 @@ class Reservation {
   /// Null until the session has stopped and been billed.
   final double? chargingCost;
 
+  /// Embedded `booking_fee.status` ("paid" / "refunded"); empty if none.
+  final String bookingFeeStatus;
+
   Reservation({
     required this.id,
     required this.userId,
@@ -74,6 +77,7 @@ class Reservation {
     this.sessionStartedAt,
     this.sessionEndedAt,
     this.chargingCost,
+    this.bookingFeeStatus = '',
   });
 
   factory Reservation.fromJson(Map<String, dynamic> json) {
@@ -111,6 +115,8 @@ class Reservation {
       sessionStartedAt: _parseDate(session?['started_at']),
       sessionEndedAt: _parseDate(session?['ended_at']),
       chargingCost: (payment?['energy_amount'] as num?)?.toDouble(),
+      bookingFeeStatus:
+          _embeddedOne(json['booking_fee'])?['status'] as String? ?? '',
     );
   }
 
@@ -158,6 +164,9 @@ class Reservation {
   bool get isConfirmed => status == 'confirmed';
   bool get isCompleted => status == 'completed';
   bool get isCancelled => status == 'cancelled';
+
+  /// The booking fee was refunded (charger unavailable at plug-in).
+  bool get isFeeRefunded => bookingFeeStatus == 'refunded';
 
   /// True while a charging session is in progress for this booking.
   bool get isCharging => isConfirmed && startedAt != null;

@@ -24,6 +24,10 @@
 --     whole baht; must be >= 0. Deducted from the charging bill
 --     (session_payments.booking_fee_deducted) and never refunded.
 --   - status is one of: 'paid', 'refunded' (default 'paid').
+--   - refunded_at / refund_transaction_id: set by refund_booking_fee() when
+--     the fee is refunded because the charger was unavailable at plug-in.
+--     transaction_id keeps the original payment's id. Added with the ALTER
+--     at the bottom of this file.
 -- =============================================================================
 
 create table public.booking_fee (
@@ -59,3 +63,10 @@ create index IF not exists booking_fee_reservation_idx on public.booking_fee usi
 create trigger booking_fee_set_updated_at BEFORE
 update on booking_fee for EACH row
 execute FUNCTION set_updated_at ();
+
+-- -----------------------------------------------------------------------------
+-- Refund fields (run once in the SQL Editor).
+-- -----------------------------------------------------------------------------
+alter table public.booking_fee
+  add column if not exists refunded_at timestamp with time zone null,
+  add column if not exists refund_transaction_id text null;

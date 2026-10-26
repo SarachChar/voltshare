@@ -55,6 +55,34 @@
 
 ---
 
+## 1.5 Check charger status (ปุ่ม I've Plugged In)
+
+- **ใครเรียก:** แอป ตอนกด I've Plugged In ในหน้า Plug In Your Car
+- **Edge function `ocpp-status`:** request `{ chargerId, connectorId: 1 }` + user JWT
+  - อ่าน `chargers.mock_error_code` (switch ทดสอบ)
+  - `null` → `{ status: "Available", errorCode: "NoError" }` → เปิดหน้า Charging Session
+  - มีค่า → `{ status: "Unavailable", errorCode: <ค่านั้น> }` → แอปเรียก `refund-booking-fee` ต่อทันที
+- `ocpp-status` อ่านอย่างเดียว ไม่เขียนข้อมูล
+
+### Refund (charger unavailable)
+
+- **Edge function `refund-booking-fee`:** request `{ reservationId }` + user JWT → สร้าง `mock_refund_...` → เรียก SQL `refund_booking_fee`
+- **SQL `refund_booking_fee(p_reservation_id, p_user_id, p_refund_transaction_id)`** (lock reservation `for update`):
+
+  | เช็ค | error_code |
+  |---|---|
+  | ไม่มี reservation | `RESERVATION_NOT_FOUND` |
+  | ไม่ใช่เจ้าของ | `NOT_OWNER` |
+  | ไม่ใช่ `confirmed` หรือเริ่มชาร์จแล้ว | `RESERVATION_NOT_ACTIVE` |
+  | `chargers.mock_error_code` เป็น null (charger ปกติ) | `CHARGER_AVAILABLE` |
+  | คืนเงินไปแล้ว | `ALREADY_REFUNDED` |
+
+  ผ่าน → `booking_fee`: `refunded` + `refunded_at` + `refund_transaction_id`, `reservations`: `cancelled`
+- แอปเปิดหน้า **Charger Unavailable** (เหตุผล + ยอดที่คืน + ปุ่ม Done กลับ Bookings) การ์ดใน Bookings มีป้าย **Refunded**
+- Host revenue: ค่าจองที่ `refunded` ไม่ถูกนับ (นับเฉพาะ `paid`)
+
+---
+
 ## 2. Start Charging
 
 ### ลำดับ

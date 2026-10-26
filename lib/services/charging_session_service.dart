@@ -45,12 +45,61 @@ class ChargingException implements Exception {
             'again.';
       case 'ALREADY_PAID':
         return 'This charging session has already been paid.';
+      case 'ALREADY_REFUNDED':
+        return 'This booking fee has already been refunded.';
+      case 'CHARGER_NOT_FOUND':
+        return 'This charger could not be found.';
       case 'NETWORK_ERROR':
         return 'Couldn\'t connect. Please check your connection and try again.';
       default:
         return message.isNotEmpty
             ? message
             : 'Something went wrong. Please try again.';
+    }
+  }
+}
+
+/// Connector status reported by the (mock) charger via `ocpp-status`.
+class ChargerStatus {
+  /// OCPP status, e.g. "Available" / "Unavailable".
+  final String status;
+
+  /// OCPP errorCode, "NoError" when healthy.
+  final String errorCode;
+
+  ChargerStatus({required this.status, required this.errorCode});
+
+  bool get isAvailable => status == 'Available';
+
+  /// Friendly reason for the error popup when not available.
+  String get userMessage {
+    switch (errorCode) {
+      case 'NoError':
+        return 'This charger is currently unavailable. Please try again '
+            'later.';
+      case 'ConnectorLockFailure':
+        return 'The connector couldn\'t lock. Please unplug the cable, plug '
+            'it in again and retry.';
+      case 'EVCommunicationError':
+        return 'The charger can\'t communicate with your car. Check the '
+            'cable is fully plugged in and retry.';
+      case 'GroundFailure':
+        return 'The charger detected a ground fault. For safety it can\'t '
+            'start charging. Please contact the host.';
+      case 'HighTemperature':
+        return 'The charger is too hot right now. Please wait a few minutes '
+            'and retry.';
+      case 'OverCurrentFailure':
+      case 'OverVoltage':
+      case 'UnderVoltage':
+        return 'The charger detected a power problem and can\'t start '
+            'charging. Please contact the host.';
+      case 'WeakSignal':
+        return 'The charger has a weak network connection. Please retry in '
+            'a moment.';
+      default:
+        return 'The charger reported a problem ($errorCode) and can\'t '
+            'start charging. Please retry or contact the host.';
     }
   }
 }
@@ -78,6 +127,14 @@ class PendingChargingSession {
 }
 
 abstract class ChargingSessionService {
+  /// Calls `ocpp-status` for [chargerId]'s connector.
+  Future<ChargerStatus> checkChargerStatus(String chargerId);
+
+  /// Calls `refund-booking-fee`: cancels [reservationId] and refunds its
+  /// booking fee (server re-checks the charger is unavailable). Returns the
+  /// refunded amount (THB).
+  Future<double> refundBookingFee(String reservationId);
+
   /// Calls `ocpp-remote-start`. Returns the new session id.
   Future<String> startCharging(String reservationId);
 
@@ -150,6 +207,27 @@ class ChargingSessionSupabaseService implements ChargingSessionService {
       );
     }
     throw ChargingException('INTERNAL_ERROR', 'Unexpected response.');
+  }
+
+  @override
+  Future<ChargerStatus> checkChargerStatus(String chargerId) async {
+    final data = await _invoke(
+      'ocpp-status',
+      {'chargerId': chargerId, 'connectorId': 1},
+    );
+    return ChargerStatus(
+      status: data['status'] as String? ?? 'Unavailable',
+      errorCode: data['errorCode'] as String? ?? 'OtherError',
+    );
+  }
+
+  @override
+  Future<double> refundBookingFee(String reservationId) async {
+    final data = await _invoke(
+      'refund-booking-fee',
+      {'reservationId': reservationId},
+    );
+    return (data['refundedAmount'] as num?)?.toDouble() ?? 0;
   }
 
   @override

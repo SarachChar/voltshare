@@ -19,6 +19,16 @@ class ChargingSessionController {
 
   static void notifyChanged() => changes.value++;
 
+  Future<ChargerStatus> checkChargerStatus(String chargerId) =>
+      service.checkChargerStatus(chargerId);
+
+  /// Cancels the booking and refunds its fee (charger unavailable).
+  Future<double> refundBookingFee(String reservationId) async {
+    final amount = await service.refundBookingFee(reservationId);
+    notifyChanged();
+    return amount;
+  }
+
   Future<String> startCharging(String reservationId) async {
     final id = await service.startCharging(reservationId);
     notifyChanged();

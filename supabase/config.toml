@@ -23,5 +23,11 @@ verify_jwt = true
 [functions.ocpp-meter-values]
 verify_jwt = true
 
+[functions.ocpp-status]
+verify_jwt = true
+
+[functions.refund-booking-fee]
+verify_jwt = true
+
 [functions.mock-charger]
 verify_jwt = true

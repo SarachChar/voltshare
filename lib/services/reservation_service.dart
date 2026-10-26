@@ -112,7 +112,7 @@ class ReservationSupabaseService implements ReservationService {
         .select(
           '*, ${Reservation.chargerJoin}, reviews(*), '
           'charging_sessions(started_at, ended_at, '
-          'session_payments(energy_amount))',
+          'session_payments(energy_amount)), booking_fee(status)',
         )
         .eq('user_id', userId)
         .order('start_time', ascending: false);
