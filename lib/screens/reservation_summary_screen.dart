@@ -17,10 +17,10 @@ import 'package:voltshare_app/services/reservation_service.dart';
 /// lays out the full booking summary, lets the driver pick which saved card to
 /// pay with, and holds the "Confirm Reservation" action.
 ///
-/// Confirm flow (payment is mocked via the `mock-payment` edge function):
+/// Confirm flow (payment is mocked via the `pay-booking-fee` edge function):
 ///   1. create the reservation (fails early if the slot was just taken)
-///   2. charge the chosen card
-///      - success -> record the booking fee, go to the confirmation screen
+///   2. pay the booking fee with the chosen card
+///      - success -> (server records booking_fee) go to the confirmation screen
 ///      - failure -> roll back (delete) the reservation, let the driver retry
 ///
 /// Returns a [ReservationSummaryResult] when popped so the reserve screen knows
@@ -581,12 +581,13 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
       return;
     }
 
-    // 2. Charge the chosen card (mock).
+    // 2. Pay the booking fee (mock). The server charges the card and records
+    //    the booking_fee row; on failure we roll back the reservation.
     try {
-      final result = await _paymentController.charge(
-        cardLast4: card.last4,
+      final result = await _paymentController.payBookingFee(
+        reservationId: reservationId,
+        paymentMethodId: card.id,
         amount: widget.fee,
-        reservationRef: reservationId,
       );
 
       if (!result.success) {
@@ -598,16 +599,8 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
         await _showPaymentFailed(result.failureMessage);
         return;
       }
-
-      // 3. Record the paid booking fee (1-1 with the reservation).
-      await _paymentController.recordBookingFee(
-        reservationId: reservationId,
-        paymentMethodId: card.id,
-        amount: widget.fee,
-        transactionId: result.transactionId,
-      );
     } catch (_) {
-      // Payment/record errored — roll back so we don't leave an unpaid booking.
+      // Payment errored — roll back so we don't leave an unpaid booking.
       await _reservationController.deleteReservation(reservationId);
       if (!mounted) return;
       setState(() => _isBooking = false);
@@ -616,7 +609,7 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
     }
 
     if (!mounted) return;
-    // 4. Done — show the confirmation screen, then leave the flow.
+    // 3. Done — show the confirmation screen, then leave the flow.
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ReservationConfirmedScreen(

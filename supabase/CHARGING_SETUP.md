@@ -107,6 +107,7 @@ supabase link --project-ref <project-ref>     # ถ้าถาม database pass
 supabase functions deploy ocpp-remote-start    --use-api
 supabase functions deploy ocpp-remote-stop     --use-api
 supabase functions deploy pay-charging-session --use-api
+supabase functions deploy pay-booking-fee      --use-api
 supabase functions deploy ocpp-meter-values    --use-api
 supabase functions deploy mock-charger         --use-api
 ```

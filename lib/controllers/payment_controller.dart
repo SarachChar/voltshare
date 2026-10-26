@@ -15,37 +15,23 @@ class PaymentController {
 
   PaymentController(this.service);
 
-  /// Runs the mock charge for [amount] against the card with [cardLast4].
-  Future<PaymentResult> charge({
-    required String cardLast4,
-    required int amount,
-    String? reservationRef,
-  }) async {
-    onSyncController.add(true);
-    final result = await service.charge(
-      cardLast4: cardLast4,
-      amount: amount,
-      reservationRef: reservationRef,
-    );
-    onSyncController.add(false);
-    return result;
-  }
-
-  /// Records the paid booking fee for a reservation.
-  Future<void> recordBookingFee({
+  /// Pays the booking fee for [reservationId] with [paymentMethodId]. The
+  /// server records the `booking_fee` row on success.
+  Future<PaymentResult> payBookingFee({
     required String reservationId,
     required String paymentMethodId,
     required int amount,
-    String? transactionId,
   }) async {
     onSyncController.add(true);
-    await service.recordBookingFee(
-      reservationId: reservationId,
-      paymentMethodId: paymentMethodId,
-      amount: amount,
-      transactionId: transactionId,
-    );
-    onSyncController.add(false);
+    try {
+      return await service.payBookingFee(
+        reservationId: reservationId,
+        paymentMethodId: paymentMethodId,
+        amount: amount,
+      );
+    } finally {
+      onSyncController.add(false);
+    }
   }
 
   void dispose() {
