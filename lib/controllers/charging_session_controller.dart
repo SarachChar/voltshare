@@ -34,10 +34,12 @@ class ChargingSessionController {
   Future<void> payForSession({
     required String sessionId,
     required String paymentMethodId,
+    required double amount,
   }) async {
     await service.payForSession(
       sessionId: sessionId,
       paymentMethodId: paymentMethodId,
+      amount: amount,
     );
     notifyChanged();
   }

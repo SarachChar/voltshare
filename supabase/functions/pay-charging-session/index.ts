@@ -1,15 +1,17 @@
 // pay-charging-session
 //
 // Pays the bill of a finished charging session with one of the driver's saved
-// cards. The amount always comes from session_payments (computed in SQL when
-// the session stopped), never from the app.
+// cards. The bill itself is computed in SQL when the session stops; the app
+// sends the amount it showed the driver, which must match the bill
+// (AMOUNT_MISMATCH otherwise), so the driver is never charged something
+// different from what the Pay button said.
 //
 // MOCK: no real money moves. Same rule as mock-payment: a card ending in
 // "0000" is declined, any other card succeeds.
 //
 // Auth: the signed-in driver's JWT (default verify_jwt).
 //
-// Request:  { "sessionId": "<uuid>", "paymentMethodId": "<uuid>" }
+// Request:  { "sessionId": "<uuid>", "paymentMethodId": "<uuid>", "amount": 79.84 }
 // Response:
 //   { "success": true, "data": {
 //       "status": "paid", "paymentId": "...", "totalAmount": 79.84,
@@ -17,7 +19,8 @@
 //   { "success": false, "data": { "errorCode": "PAYMENT_DECLINED", "error": "..." } }
 //
 // errorCodes: INVALID_REQUEST, UNAUTHORIZED, SESSION_NOT_FOUND, NOT_OWNER,
-//   ALREADY_PAID, INVALID_PAYMENT_METHOD, PAYMENT_DECLINED, INTERNAL_ERROR
+//   ALREADY_PAID, INVALID_PAYMENT_METHOD, AMOUNT_MISMATCH, PAYMENT_DECLINED,
+//   INTERNAL_ERROR
 //
 // Deploy: supabase functions deploy pay-charging-session
 
@@ -39,15 +42,20 @@ Deno.serve(async (req: Request) => {
   const userId = await getUserId(req, admin);
   if (!userId) return fail("UNAUTHORIZED", "Please sign in.");
 
-  const { sessionId, paymentMethodId } = await readJson<{
+  const { sessionId, paymentMethodId, amount } = await readJson<{
     sessionId: string;
     paymentMethodId: string;
+    amount: number;
   }>(req);
   if (
     typeof sessionId !== "string" || sessionId.length === 0 ||
-    typeof paymentMethodId !== "string" || paymentMethodId.length === 0
+    typeof paymentMethodId !== "string" || paymentMethodId.length === 0 ||
+    typeof amount !== "number" || !Number.isFinite(amount) || amount < 0
   ) {
-    return fail("INVALID_REQUEST", "sessionId and paymentMethodId are required.");
+    return fail(
+      "INVALID_REQUEST",
+      "sessionId, paymentMethodId and amount are required.",
+    );
   }
 
   const prepared = await callRpc(admin, "charging_payment_prepare", {
@@ -57,6 +65,15 @@ Deno.serve(async (req: Request) => {
   });
   if (!prepared.ok) {
     return fail(prepared.error_code ?? "INTERNAL_ERROR", prepared.error ?? "Rejected.");
+  }
+
+  // Compare in satang to avoid float rounding (79.84 vs 79.840000001).
+  const billSatang = Math.round(Number(prepared.amount) * 100);
+  if (Math.round(amount * 100) !== billSatang) {
+    return fail(
+      "AMOUNT_MISMATCH",
+      "The amount doesn't match this session's bill. Please refresh and try again.",
+    );
   }
 
   // Mock card charge (simulated latency, deterministic outcome).

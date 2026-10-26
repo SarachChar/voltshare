@@ -148,6 +148,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       await _controller.payForSession(
         sessionId: widget.sessionId,
         paymentMethodId: card.id,
+        amount: _payment?.totalAmount ?? 0,
       );
       if (!mounted) return;
       setState(() => _isPaying = false);
@@ -168,7 +169,13 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
           ),
         ),
       );
-      if (mounted) await _loadCards();
+      if (!mounted) return;
+      // The bill may have changed: reload it before the next attempt.
+      if (e.code == 'AMOUNT_MISMATCH') {
+        await _load();
+      } else {
+        await _loadCards();
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _isPaying = false);

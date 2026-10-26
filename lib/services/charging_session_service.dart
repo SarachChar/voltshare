@@ -40,6 +40,9 @@ class ChargingException implements Exception {
         return 'Payment declined: insufficient funds. Try another card.';
       case 'INVALID_PAYMENT_METHOD':
         return 'That card is no longer available. Please choose another.';
+      case 'AMOUNT_MISMATCH':
+        return 'The amount has changed. Please review your bill and try '
+            'again.';
       case 'ALREADY_PAID':
         return 'This charging session has already been paid.';
       case 'NETWORK_ERROR':
@@ -81,10 +84,12 @@ abstract class ChargingSessionService {
   /// Calls `ocpp-remote-stop`.
   Future<ChargingStopResult> stopCharging(String reservationId);
 
-  /// Calls `pay-charging-session`.
+  /// Calls `pay-charging-session`. [amount] is the bill total shown to the
+  /// driver; the server rejects it (AMOUNT_MISMATCH) if it differs.
   Future<void> payForSession({
     required String sessionId,
     required String paymentMethodId,
+    required double amount,
   });
 
   /// The session for a reservation (with the reservation + charger), or null.
@@ -173,10 +178,12 @@ class ChargingSessionSupabaseService implements ChargingSessionService {
   Future<void> payForSession({
     required String sessionId,
     required String paymentMethodId,
+    required double amount,
   }) async {
     await _invoke('pay-charging-session', {
       'sessionId': sessionId,
       'paymentMethodId': paymentMethodId,
+      'amount': amount,
     });
   }
 
