@@ -12,6 +12,10 @@
 --   - No outgoing foreign keys.
 --   - Referenced by: chargers.host_id, payment_methods.user_id (both CASCADE).
 --
+-- TRIGGERS
+--   - profiles_set_updated_at: set_updated_at() BEFORE UPDATE. Also fires on
+--     the UPDATE branch of an upsert (ProfileService.upsertProfile).
+--
 -- NOTES
 --   - id defaults to gen_random_uuid() and has no FK to auth.users, so linking
 --     a profile to its auth user relies on app logic inserting the auth uid.
@@ -27,3 +31,7 @@ create table public.profiles (
   email text null,
   constraint profiles_pkey primary key (id)
 ) TABLESPACE pg_default;
+
+create trigger profiles_set_updated_at before
+update on profiles for each row
+execute function set_updated_at ();

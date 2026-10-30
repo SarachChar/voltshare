@@ -11,6 +11,9 @@
 -- RELATIONSHIPS
 --   - charger_id -> chargers(id)  ON DELETE CASCADE
 --
+-- TRIGGERS
+--   - charger_promotions_set_updated_at: set_updated_at() BEFORE UPDATE.
+--
 -- NOTES
 --   - status is one of: ACTIVE, INACTIVE, EXPIRED (default ACTIVE), enforced by
 --     a check constraint.
@@ -46,3 +49,7 @@ create table public.charger_promotions (
     )
   )
 ) TABLESPACE pg_default;
+
+create trigger charger_promotions_set_updated_at before
+update on charger_promotions for each row
+execute function set_updated_at ();

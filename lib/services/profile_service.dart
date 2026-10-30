@@ -30,7 +30,6 @@ class ProfileSupabaseService implements ProfileService {
           'name': profile.name,
           'phone': profile.phone,
           'email': profile.email,
-          'updated_at': DateTime.now().toIso8601String(),
         })
         .select()
         .single();

@@ -260,15 +260,9 @@ class ChargerController {
     );
   }
 
-  /// Replaces a charger's businesses with [businesses].
-  Future<void> replaceChargerBusinesses({
-    required String chargerId,
-    required List<ChargerBusiness> businesses,
-  }) {
-    return service.replaceChargerBusinesses(
-      chargerId: chargerId,
-      businesses: businesses,
-    );
+  /// Soft-deletes the businesses with [businessIds] (used when editing).
+  Future<void> softDeleteChargerBusinesses(List<String> businessIds) {
+    return service.softDeleteChargerBusinesses(businessIds);
   }
 
   /// Saves a charger's weekly opening hours into `charger_availability`.

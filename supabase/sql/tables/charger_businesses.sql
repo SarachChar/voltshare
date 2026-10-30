@@ -11,6 +11,9 @@
 -- RELATIONSHIPS
 --   - charger_id -> chargers(id)  ON DELETE CASCADE
 --
+-- TRIGGERS
+--   - charger_businesses_set_updated_at: set_updated_at() BEFORE UPDATE.
+--
 -- NOTES
 --   - business_type is one of: CAFE, RESTAURANT, CO_WORKING, RETAIL,
 --     CONVENIENCE, SALON, GYM, OTHER (enforced by a check constraint).
@@ -47,3 +50,7 @@ create table public.charger_businesses (
     )
   )
 ) TABLESPACE pg_default;
+
+create trigger charger_businesses_set_updated_at before
+update on charger_businesses for each row
+execute function set_updated_at ();

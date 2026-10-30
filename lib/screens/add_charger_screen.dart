@@ -84,18 +84,27 @@ class _PickedPhoto {
   bool get isExisting => existingId != null;
 }
 
-/// A business the host has added in the Business step but hasn't saved yet.
-/// [typeValue] is the DB enum value (e.g. `CAFE`), not the display label.
+/// A business shown in the Business step. [typeValue] is the DB enum value
+/// (e.g. `CAFE`), not the display label.
+///
+/// [existingId] is the `charger_businesses` row id for a business that is
+/// already saved (loaded while editing, or inserted by an earlier save
+/// attempt). It is null for a business the host just added, which still
+/// needs to be inserted.
 class _DraftBusiness {
   _DraftBusiness({
     required this.typeValue,
     required this.name,
     required this.description,
+    this.existingId,
   });
 
   final String typeValue;
   final String name;
   final String description;
+  String? existingId;
+
+  bool get isExisting => existingId != null;
 }
 
 /// A selectable business type: the label shown in the UI paired with the value
@@ -230,6 +239,11 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
   final List<String> _removedChargerImageIds = [];
   final List<String> _removedBusinessImageIds = [];
 
+  /// DB ids of existing businesses the host removed while editing. These rows
+  /// get `deleted_at` stamped on save. New (unsaved) businesses never appear
+  /// here.
+  final List<String> _removedBusinessIds = [];
+
   /// True while the finish action is uploading, so the button shows a spinner
   /// and can't be tapped twice.
   bool _isSubmitting = false;
@@ -319,6 +333,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
               typeValue: b.businessType,
               name: b.businessName,
               description: b.description,
+              existingId: b.id,
             ),
           ));
 
@@ -471,6 +486,18 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
       final removed = _photos.removeAt(index);
       if (removed.isExisting) {
         _removedChargerImageIds.add(removed.existingId!);
+      }
+    });
+  }
+
+  /// Removes [business] from the list. Nothing is written yet: an already
+  /// saved business is only queued in [_removedBusinessIds] and soft-deleted
+  /// when the host confirms the save.
+  void _removeBusiness(_DraftBusiness business) {
+    setState(() {
+      _draftBusinesses.remove(business);
+      if (business.isExisting) {
+        _removedBusinessIds.add(business.existingId!);
       }
     });
   }
@@ -675,6 +702,10 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
     );
 
     // 4. Save the businesses offered at this charger (optional step).
+    //    Every create attempt inserts a brand-new charger row, so all
+    //    businesses are inserted for it. existingId is deliberately not
+    //    recorded: it would point at a previous attempt's charger and make a
+    //    retried create skip them.
     for (final business in _draftBusinesses) {
       await _controller.insertChargerBusiness(
         chargerId: charger.id,
@@ -737,21 +768,10 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
       days: _availabilityRows(chargerId),
     );
 
-    // 4. Replace the businesses with the edited set.
-    await _controller.replaceChargerBusinesses(
-      chargerId: chargerId,
-      businesses: _draftBusinesses
-          .map(
-            (b) => ChargerBusiness(
-              id: '',
-              chargerId: chargerId,
-              businessType: b.typeValue,
-              businessName: b.name,
-              description: b.description,
-            ),
-          )
-          .toList(),
-    );
+    // 4. Businesses: stamp deleted_at only on the ones the host removed, and
+    //    insert only the newly added ones. Untouched businesses are left as-is.
+    await _controller.softDeleteChargerBusinesses(_removedBusinessIds);
+    await _insertNewBusinesses(chargerId);
 
     // 5. Business photos: same reconcile as the charger photos.
     for (final imageId in _removedBusinessImageIds) {
@@ -766,6 +786,23 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         displayOrder: order,
       ),
     );
+  }
+
+  /// Edit flow only: inserts the businesses in [_draftBusinesses] that aren't
+  /// saved yet. Each inserted business keeps its new row id, so if a later
+  /// step fails and the host saves again, it isn't inserted a second time
+  /// (safe here because editing always targets the same charger id).
+  Future<void> _insertNewBusinesses(String chargerId) async {
+    for (final business in _draftBusinesses) {
+      if (business.isExisting) continue;
+      final saved = await _controller.insertChargerBusiness(
+        chargerId: chargerId,
+        businessType: business.typeValue,
+        businessName: business.name,
+        description: business.description,
+      );
+      business.existingId = saved.id;
+    }
   }
 
   /// Uploads the newly-picked photos in [photos] (existing ones are skipped),
@@ -1988,7 +2025,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
               borderRadius: BorderRadius.circular(12),
               onTap: _isSubmitting
                   ? null
-                  : () => setState(() => _draftBusinesses.remove(business)),
+                  : () => _removeBusiness(business),
               child: Container(
                 width: 44,
                 height: 44,

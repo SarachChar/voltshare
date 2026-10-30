@@ -13,6 +13,9 @@
 -- RELATIONSHIPS
 --   - host_id -> profiles(id)  ON DELETE CASCADE
 --
+-- TRIGGERS
+--   - chargers_set_updated_at: set_updated_at() BEFORE UPDATE.
+--
 -- NOTES
 --   - latitude/longitude are numeric(10,7); used by the search functions
 --     (see supabase/sql/functions/) via earthdistance.
@@ -57,6 +60,10 @@ create table public.chargers (
     )
   )
 ) TABLESPACE pg_default;
+
+create trigger chargers_set_updated_at before
+update on chargers for each row
+execute function set_updated_at ();
 
 -- -----------------------------------------------------------------------------
 -- Mock charger status switch (run once in the SQL Editor).
