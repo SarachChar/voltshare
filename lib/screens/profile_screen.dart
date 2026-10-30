@@ -4,7 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voltshare_app/app_version.dart';
 import 'package:voltshare_app/models/profile_provider.dart';
 import 'package:voltshare_app/screens/host_dashboard_screen.dart';
+import 'package:voltshare_app/screens/help_support_screen.dart';
 import 'package:voltshare_app/screens/payment_methods_screen.dart';
+import 'package:voltshare_app/screens/privacy_security_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -133,9 +135,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// A single white card holding the settings-style menu rows. These are mocks
-  /// for now — tapping one just shows a "coming soon" snackbar; no real pages
-  /// are wired up yet.
+  /// A single white card holding the settings-style menu rows. Privacy and
+  /// Help pages currently show mock content.
   Widget _buildMenuCard() {
     return Container(
       decoration: BoxDecoration(
@@ -155,9 +156,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           _menuDivider(),
-          _menuRow(Icons.shield_outlined, 'Privacy & Security'),
+          _menuRow(
+            Icons.shield_outlined,
+            'Privacy & Security',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const PrivacySecurityScreen(),
+              ),
+            ),
+          ),
           _menuDivider(),
-          _menuRow(Icons.help_outline, 'Help & Support'),
+          _menuRow(
+            Icons.help_outline,
+            'Help & Support',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const HelpSupportScreen(),
+              ),
+            ),
+          ),
         ],
       ),
     );
