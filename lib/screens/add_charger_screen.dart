@@ -452,7 +452,16 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
   /// the charger photos (Info step) and business photos (Business step).
   Future<void> _pickPhotosInto(List<_PickedPhoto> target) async {
     try {
-      final picked = await _picker.pickMultiImage();
+      // Downscale and re-encode on pick so uploads (and later downloads) stay
+      // small: phone photos are often 3–8 MB at 4000px+, but the app never
+      // shows them larger than a screen. 1600px / quality 80 is usually
+      // ~200–400 KB with no visible loss. Setting imageQuality also makes iOS
+      // convert HEIC to JPEG.
+      final picked = await _picker.pickMultiImage(
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 80,
+      );
       if (picked.isEmpty) return;
 
       final loaded = <_PickedPhoto>[];
