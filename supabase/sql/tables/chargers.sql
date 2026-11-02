@@ -5,13 +5,16 @@
 -- developing features; this mirrors the live table definition in Supabase.
 --
 -- PURPOSE
---   Core table describing each EV charger listing: owner (host), location,
---   hardware specs, pricing, and listing status. Many other tables reference
---   this one (business_images, charger_availability, charger_businesses,
---   charger_images, charger_promotions).
+--   One charging unit inside a station: hardware specs, pricing and approval
+--   status. Location, owner, photos, businesses and promotions live on the
+--   station (see stations.sql). Referenced by charger_availability and
+--   reservations.
 --
 -- RELATIONSHIPS
---   - host_id -> profiles(id)  ON DELETE CASCADE
+--   - station_id -> stations(id)  ON DELETE CASCADE  (added by the "Station
+--     layer" ALTER at the bottom; nullable until Task 9)
+--   - host_id -> profiles(id)  ON DELETE CASCADE  (legacy, nullable; dropped
+--     in Task 9 together with description / address / latitude / longitude)
 --
 -- TRIGGERS
 --   - chargers_set_updated_at: set_updated_at() BEFORE UPDATE.
@@ -84,3 +87,25 @@ alter table public.chargers
       'WeakSignal'
     ]::text[])
   );
+
+-- -----------------------------------------------------------------------------
+-- Station layer (Task 1). Each charger belongs to a station.
+--   - station_id is nullable during the transition; Task 9 makes it NOT NULL
+--     and drops host_id / description / address / latitude / longitude
+--     (those now live on stations).
+--   - host_id becomes nullable: chargers created by the new host flow only set
+--     station_id. Ownership = stations.host_id.
+--   - Index serves the station search filters (connector / status per station).
+-- -----------------------------------------------------------------------------
+alter table public.chargers
+  add column if not exists station_id uuid null;
+
+alter table public.chargers
+  add constraint chargers_station_id_fkey foreign key (station_id)
+    references stations (id) on delete cascade;
+
+alter table public.chargers
+  alter column host_id drop not null;
+
+create index if not exists chargers_station_status_connector_idx
+  on public.chargers using btree (station_id, status, connector_type);

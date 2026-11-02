@@ -1,0 +1,22 @@
+-- =============================================================================
+-- Reset: wipe all charger / station data (Task 1, decision "clear and reseed")
+-- -----------------------------------------------------------------------------
+-- DESTRUCTIVE. Deletes every station and charger and everything that hangs off
+-- them through foreign keys:
+--   chargers -> charger_availability, charger_images, business_images,
+--               charger_businesses, charger_promotions, reservations
+--   reservations -> booking_fee, charging_sessions, reviews
+--   charging_sessions -> session_streams, session_payments
+--   stations -> station_images, station_business_images, station_businesses,
+--               station_promotions
+-- Profiles, payment_methods and auth users are NOT touched.
+--
+-- Storage files are NOT removed by this script. Delete the folders in
+-- Dashboard -> Storage -> voltshare_charger (charger/, business/, station/,
+-- station_business/) by hand if you want the bucket empty.
+--
+-- HOW TO RUN
+--   Run in the SQL Editor right before seed/mock_stations.sql.
+-- =============================================================================
+
+truncate table public.stations, public.chargers cascade;
