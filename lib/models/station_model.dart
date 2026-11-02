@@ -36,6 +36,10 @@ class Station {
   /// Highest power (kW) among the available chargers.
   final double? maxPowerKw;
 
+  /// Chargers still in the approval flow ('review' / 'setup' / 'rejected').
+  /// Only filled for host queries that embed `chargers(id, status)`.
+  final int pendingCount;
+
   const Station({
     required this.id,
     required this.name,
@@ -52,9 +56,63 @@ class Station {
     this.chargerTypes = const [],
     this.minPrice,
     this.maxPowerKw,
+    this.pendingCount = 0,
   });
 
+  /// Status buckets used when counting an embedded `chargers(id, status)`.
+  static const Set<String> _liveStatuses = {'available', 'unavailable'};
+  static const Set<String> _pendingStatuses = {'review', 'setup', 'rejected'};
+
   factory Station.fromJson(Map<String, dynamic> json) {
+    // Host queries embed the station's chargers instead of returning the RPC
+    // summary columns; count them here.
+    final embedded = json['chargers'];
+    if (embedded is List && json['charger_count'] == null) {
+      final statuses = embedded
+          .whereType<Map>()
+          .map((c) => c['status'] as String? ?? '')
+          .toList();
+      return Station._base(json).copyWith(
+        chargerCount: statuses.where(_liveStatuses.contains).length,
+        availableCount: statuses.where((s) => s == 'available').length,
+        pendingCount: statuses.where(_pendingStatuses.contains).length,
+      );
+    }
+    return Station._base(json);
+  }
+
+  /// Copy with some counts replaced.
+  Station copyWith({
+    String? name,
+    String? description,
+    String? address,
+    double? latitude,
+    double? longitude,
+    int? chargerCount,
+    int? availableCount,
+    int? pendingCount,
+  }) {
+    return Station(
+      id: id,
+      hostId: hostId,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      address: address ?? this.address,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      createdAt: createdAt,
+      distanceMeters: distanceMeters,
+      chargerCount: chargerCount ?? this.chargerCount,
+      availableCount: availableCount ?? this.availableCount,
+      connectorTypes: connectorTypes,
+      chargerTypes: chargerTypes,
+      minPrice: minPrice,
+      maxPowerKw: maxPowerKw,
+      pendingCount: pendingCount ?? this.pendingCount,
+    );
+  }
+
+  factory Station._base(Map<String, dynamic> json) {
     return Station(
       id: json['id'] as String,
       hostId: json['host_id'] as String? ?? '',
@@ -102,6 +160,16 @@ class Station {
       return '$availableCount available';
     }
     return '$availableCount/$chargerCount available';
+  }
+
+  /// Host card line, e.g. "2 live · 1 pending" or "No chargers yet".
+  String get hostCountsLabel {
+    if (chargerCount == 0 && pendingCount == 0) return 'No chargers yet';
+    final parts = <String>[
+      if (chargerCount > 0) '$chargerCount live',
+      if (pendingCount > 0) '$pendingCount pending',
+    ];
+    return parts.join(' · ');
   }
 
   /// "from ฿7.50/kWh"; empty when [minPrice] is unknown.

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/models/station_model.dart';
@@ -104,6 +105,142 @@ class StationController {
 
   Future<List<StationPromotion>> fetchActivePromotions(String stationId) =>
       service.getActivePromotions(stationId);
+
+  // ----- Host side -----------------------------------------------------------
+
+  Future<List<Station>> fetchStationsByHost(String hostId) =>
+      service.getStationsByHost(hostId);
+
+  Future<List<Charger>> fetchAllStationChargers(String stationId) =>
+      service.getAllStationChargers(stationId);
+
+  Future<Station> createStation({
+    required String hostId,
+    required String name,
+    String description = '',
+    String address = '',
+    required double latitude,
+    required double longitude,
+  }) =>
+      service.createStation(
+        hostId: hostId,
+        name: name,
+        description: description,
+        address: address,
+        latitude: latitude,
+        longitude: longitude,
+      );
+
+  Future<Station> updateStation({
+    required String stationId,
+    required String name,
+    String description = '',
+    String address = '',
+    required double latitude,
+    required double longitude,
+  }) =>
+      service.updateStation(
+        stationId: stationId,
+        name: name,
+        description: description,
+        address: address,
+        latitude: latitude,
+        longitude: longitude,
+      );
+
+  Future<String> uploadStationImage({
+    required String folder,
+    required int index,
+    required Uint8List bytes,
+    required String fileExtension,
+  }) =>
+      service.uploadStationImage(
+        folder: folder,
+        index: index,
+        bytes: bytes,
+        fileExtension: fileExtension,
+      );
+
+  Future<StationImage> insertStationImage({
+    required String stationId,
+    required String imagePath,
+    required int displayOrder,
+  }) =>
+      service.insertStationImage(
+        stationId: stationId,
+        imagePath: imagePath,
+        displayOrder: displayOrder,
+      );
+
+  Future<void> deleteStationImage(String imageId) =>
+      service.deleteStationImage(imageId);
+
+  Future<StationBusinessImage> insertStationBusinessImage({
+    required String stationId,
+    required String imagePath,
+    required int displayOrder,
+  }) =>
+      service.insertStationBusinessImage(
+        stationId: stationId,
+        imagePath: imagePath,
+        displayOrder: displayOrder,
+      );
+
+  Future<void> deleteStationBusinessImage(String imageId) =>
+      service.deleteStationBusinessImage(imageId);
+
+  Future<StationBusiness> insertStationBusiness({
+    required String stationId,
+    required String businessType,
+    required String businessName,
+    String description = '',
+  }) =>
+      service.insertStationBusiness(
+        stationId: stationId,
+        businessType: businessType,
+        businessName: businessName,
+        description: description,
+      );
+
+  Future<void> softDeleteStationBusinesses(List<String> businessIds) =>
+      service.softDeleteStationBusinesses(businessIds);
+
+  /// Every non-deleted promotion (any status), for the host's panel.
+  Future<List<StationPromotion>> fetchStationPromotions(String stationId) =>
+      service.getStationPromotions(stationId);
+
+  Future<StationPromotion> createPromotion({
+    required String stationId,
+    required String title,
+    String description = '',
+    DateTime? validFrom,
+    DateTime? validUntil,
+    String status = 'ACTIVE',
+    String termsAndConditions = '',
+  }) =>
+      service.createPromotion(
+        stationId: stationId,
+        title: title,
+        description: description,
+        validFrom: validFrom,
+        validUntil: validUntil,
+        status: status,
+        termsAndConditions: termsAndConditions,
+      );
+
+  /// Switches a promotion between "ACTIVE" and "INACTIVE" (uppercase for the
+  /// DB check constraint).
+  Future<StationPromotion> togglePromotionStatus(
+    String promotionId,
+    bool active,
+  ) =>
+      service.updatePromotionStatus(
+        promotionId,
+        active ? 'ACTIVE' : 'INACTIVE',
+      );
+
+  Future<void> deletePromotion(String promotionId) =>
+      service.deletePromotion(promotionId);
 
   void dispose() {
     _onSyncController.close();

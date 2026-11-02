@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voltshare_app/models/charger_model.dart';
@@ -63,6 +64,91 @@ abstract class StationService {
 
   /// ACTIVE, non-deleted promotions of the station, newest first.
   Future<List<StationPromotion>> getActivePromotions(String stationId);
+
+  // ----- Host side -----------------------------------------------------------
+
+  /// Stations owned by [hostId], newest first, with live / available / pending
+  /// charger counts (from an embedded `chargers(id, status)`).
+  Future<List<Station>> getStationsByHost(String hostId);
+
+  /// Every charger of [stationId] in any status, by name. Host view.
+  Future<List<Charger>> getAllStationChargers(String stationId);
+
+  Future<Station> createStation({
+    required String hostId,
+    required String name,
+    String description,
+    String address,
+    required double latitude,
+    required double longitude,
+  });
+
+  /// Updates the station's own fields. `host_id` is never changed.
+  Future<Station> updateStation({
+    required String stationId,
+    required String name,
+    String description,
+    String address,
+    required double latitude,
+    required double longitude,
+  });
+
+  /// Uploads one photo and returns its storage path (`<folder>/<index>.<ext>`).
+  Future<String> uploadStationImage({
+    required String folder,
+    required int index,
+    required Uint8List bytes,
+    required String fileExtension,
+  });
+
+  Future<StationImage> insertStationImage({
+    required String stationId,
+    required String imagePath,
+    required int displayOrder,
+  });
+
+  /// Deletes the `station_images` row and its storage file.
+  Future<void> deleteStationImage(String imageId);
+
+  Future<StationBusinessImage> insertStationBusinessImage({
+    required String stationId,
+    required String imagePath,
+    required int displayOrder,
+  });
+
+  /// Deletes the `station_business_images` row and its storage file.
+  Future<void> deleteStationBusinessImage(String imageId);
+
+  Future<StationBusiness> insertStationBusiness({
+    required String stationId,
+    required String businessType,
+    required String businessName,
+    String description,
+  });
+
+  /// Stamps `deleted_at` on the given businesses (already-deleted rows kept).
+  Future<void> softDeleteStationBusinesses(List<String> businessIds);
+
+  /// Every non-deleted promotion of the station (any status), newest first.
+  Future<List<StationPromotion>> getStationPromotions(String stationId);
+
+  Future<StationPromotion> createPromotion({
+    required String stationId,
+    required String title,
+    String description,
+    DateTime? validFrom,
+    DateTime? validUntil,
+    String status,
+    String termsAndConditions,
+  });
+
+  Future<StationPromotion> updatePromotionStatus(
+    String promotionId,
+    String status,
+  );
+
+  /// Soft-deletes a promotion (stamps `deleted_at`).
+  Future<void> deletePromotion(String promotionId);
 }
 
 /// Supabase-backed implementation.
@@ -223,6 +309,296 @@ class StationSupabaseService implements StationService {
     return data
         .map((row) => StationPromotion.fromJson(row as Map<String, dynamic>))
         .toList();
+  }
+
+  // ----- Host side -----------------------------------------------------------
+
+  @override
+  Future<List<Station>> getStationsByHost(String hostId) async {
+    final List<dynamic> data = await _client
+        .from('stations')
+        .select('*, chargers(id, status)')
+        .eq('host_id', hostId)
+        .order('created_at', ascending: false);
+    return Station.listFromJson(data);
+  }
+
+  @override
+  Future<List<Charger>> getAllStationChargers(String stationId) async {
+    final List<dynamic> data = await _client
+        .from('chargers')
+        .select()
+        .eq('station_id', stationId)
+        .order('name', ascending: true);
+    return AllChargers.fromJson(data).chargers;
+  }
+
+  @override
+  Future<Station> createStation({
+    required String hostId,
+    required String name,
+    String description = '',
+    String address = '',
+    required double latitude,
+    required double longitude,
+  }) async {
+    final data = await _client
+        .from('stations')
+        .insert({
+          'host_id': hostId,
+          'name': name,
+          'description': description,
+          'address': address,
+          'latitude': latitude,
+          'longitude': longitude,
+        })
+        .select()
+        .single();
+    return Station.fromJson(data);
+  }
+
+  @override
+  Future<Station> updateStation({
+    required String stationId,
+    required String name,
+    String description = '',
+    String address = '',
+    required double latitude,
+    required double longitude,
+  }) async {
+    final data = await _client
+        .from('stations')
+        .update({
+          'name': name,
+          'description': description,
+          'address': address,
+          'latitude': latitude,
+          'longitude': longitude,
+        })
+        .eq('id', stationId)
+        .select()
+        .single();
+    return Station.fromJson(data);
+  }
+
+  @override
+  Future<String> uploadStationImage({
+    required String folder,
+    required int index,
+    required Uint8List bytes,
+    required String fileExtension,
+  }) async {
+    final ext = fileExtension.isEmpty ? 'jpg' : fileExtension.toLowerCase();
+    final path = '$folder/$index.$ext';
+    // Always an INSERT (upsert false): covered by the INSERT storage policy.
+    await _client.storage.from(_imageBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: _contentTypeFor(ext),
+            upsert: false,
+          ),
+        );
+    return path;
+  }
+
+  @override
+  Future<StationImage> insertStationImage({
+    required String stationId,
+    required String imagePath,
+    required int displayOrder,
+  }) async {
+    final data = await _client
+        .from('station_images')
+        .insert({
+          'station_id': stationId,
+          'image_url': imagePath,
+          'display_order': displayOrder,
+        })
+        .select()
+        .single();
+    return StationImage.fromJson(data);
+  }
+
+  @override
+  Future<void> deleteStationImage(String imageId) =>
+      _deleteImageRow(table: 'station_images', imageId: imageId);
+
+  @override
+  Future<StationBusinessImage> insertStationBusinessImage({
+    required String stationId,
+    required String imagePath,
+    required int displayOrder,
+  }) async {
+    final data = await _client
+        .from('station_business_images')
+        .insert({
+          'station_id': stationId,
+          'image_url': imagePath,
+          'display_order': displayOrder,
+        })
+        .select()
+        .single();
+    return StationBusinessImage.fromJson(data);
+  }
+
+  @override
+  Future<void> deleteStationBusinessImage(String imageId) =>
+      _deleteImageRow(table: 'station_business_images', imageId: imageId);
+
+  @override
+  Future<StationBusiness> insertStationBusiness({
+    required String stationId,
+    required String businessType,
+    required String businessName,
+    String description = '',
+  }) async {
+    final data = await _client
+        .from('station_businesses')
+        .insert({
+          'station_id': stationId,
+          'business_type': businessType,
+          'business_name': businessName,
+          'description': description,
+        })
+        .select()
+        .single();
+    return StationBusiness.fromJson(data);
+  }
+
+  @override
+  Future<void> softDeleteStationBusinesses(List<String> businessIds) async {
+    if (businessIds.isEmpty) return;
+    await _client
+        .from('station_businesses')
+        .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
+        .inFilter('id', businessIds)
+        .isFilter('deleted_at', null);
+  }
+
+  @override
+  Future<List<StationPromotion>> getStationPromotions(String stationId) async {
+    final List<dynamic> data = await _client
+        .from('station_promotions')
+        .select()
+        .eq('station_id', stationId)
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false);
+    return data
+        .map((row) => StationPromotion.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<StationPromotion> createPromotion({
+    required String stationId,
+    required String title,
+    String description = '',
+    DateTime? validFrom,
+    DateTime? validUntil,
+    String status = 'ACTIVE',
+    String termsAndConditions = '',
+  }) async {
+    final data = await _client
+        .from('station_promotions')
+        .insert({
+          'station_id': stationId,
+          'title': title,
+          'description': description,
+          'valid_from': validFrom?.toUtc().toIso8601String(),
+          'valid_until': validUntil?.toUtc().toIso8601String(),
+          'status': status,
+          'terms_and_conditions': termsAndConditions,
+        })
+        .select()
+        .single();
+    return StationPromotion.fromJson(data);
+  }
+
+  @override
+  Future<StationPromotion> updatePromotionStatus(
+    String promotionId,
+    String status,
+  ) async {
+    final data = await _client
+        .from('station_promotions')
+        .update({'status': status})
+        .eq('id', promotionId)
+        .select()
+        .single();
+    return StationPromotion.fromJson(data);
+  }
+
+  @override
+  Future<void> deletePromotion(String promotionId) async {
+    await _client
+        .from('station_promotions')
+        .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', promotionId);
+  }
+
+  /// Deletes one image row from [table] and then its storage object. Throws
+  /// when the row wasn't removed (usually a missing DELETE RLS policy) or the
+  /// storage object wasn't removed (missing storage SELECT/DELETE policy).
+  Future<void> _deleteImageRow({
+    required String table,
+    required String imageId,
+  }) async {
+    final existing = await _client
+        .from(table)
+        .select('image_url')
+        .eq('id', imageId)
+        .maybeSingle();
+    if (existing == null) return;
+    final rawUrl = (existing['image_url'] as String?)?.trim() ?? '';
+
+    final deleted =
+        await _client.from(table).delete().eq('id', imageId).select('id');
+    if (deleted.isEmpty) {
+      throw StateError(
+        'Could not delete image $imageId from $table (row still exists; '
+        'check the DELETE policy).',
+      );
+    }
+
+    final path = _storagePath(rawUrl);
+    if (path.isEmpty) return;
+    final removed = await _client.storage.from(_imageBucket).remove([path]);
+    if (removed.isEmpty) {
+      throw StateError(
+        'Storage object "$path" was not removed from "$_imageBucket" '
+        '(check the storage SELECT/DELETE policies).',
+      );
+    }
+  }
+
+  /// Storage path for a stored image value: raw paths as-is; public URLs with
+  /// the `/object/public/<bucket>/` prefix (and any query) stripped.
+  String _storagePath(String rawValue) {
+    final raw = rawValue.trim();
+    if (raw.isEmpty) return '';
+    if (!raw.startsWith('http')) return raw;
+    final marker = '/object/public/$_imageBucket/';
+    final markerIndex = raw.indexOf(marker);
+    if (markerIndex == -1) return '';
+    final after = raw.substring(markerIndex + marker.length);
+    final q = after.indexOf('?');
+    return q == -1 ? after : after.substring(0, q);
+  }
+
+  static String _contentTypeFor(String ext) {
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      case 'heic':
+        return 'image/heic';
+      default:
+        return 'image/jpeg';
+    }
   }
 
   /// Full URLs are kept as-is; anything else is a path in [_imageBucket].

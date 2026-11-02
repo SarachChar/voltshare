@@ -96,6 +96,49 @@ void main() {
     expect(result.map((c) => c.id), ['c1']);
   });
 
+  test('togglePromotionStatus maps the switch to ACTIVE / INACTIVE', () async {
+    service.promotions = const [
+      StationPromotion(id: 'p1', stationId: 's1', title: 't'),
+    ];
+
+    final off = await controller.togglePromotionStatus('p1', false);
+    final on = await controller.togglePromotionStatus('p1', true);
+
+    expect(off.status, 'INACTIVE');
+    expect(on.status, 'ACTIVE');
+    expect(service.writes, [
+      'updatePromotionStatus: p1 INACTIVE',
+      'updatePromotionStatus: p1 ACTIVE',
+    ]);
+  });
+
+  test('createStation / updateStation / createPromotion forward their fields',
+      () async {
+    final created = await controller.createStation(
+      hostId: 'h1',
+      name: 'Hub',
+      latitude: 1,
+      longitude: 2,
+    );
+    await controller.updateStation(
+      stationId: created.id,
+      name: 'Hub 2',
+      latitude: 1,
+      longitude: 2,
+    );
+    await controller.createPromotion(
+      stationId: created.id,
+      title: 'Deal',
+      status: 'INACTIVE',
+    );
+
+    expect(service.writes, [
+      'createStation: h1 Hub',
+      'updateStation: ${created.id} Hub 2',
+      'createPromotion: ${created.id} Deal INACTIVE',
+    ]);
+  });
+
   test('fetchChargersWeek returns a full week for every charger', () async {
     service.availability = {
       'c1': [

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/models/station_model.dart';
 import 'package:voltshare_app/services/station_service.dart';
@@ -107,5 +109,188 @@ class FakeStationService implements StationService {
 
   @override
   Future<List<StationPromotion>> getActivePromotions(String stationId) async =>
+      promotions.where((p) => p.isActive).toList();
+
+  // ----- Host side -----------------------------------------------------------
+
+  List<Station> hostStations = const [];
+  List<Charger> allChargers = const [];
+
+  /// Every write call, as `name: args`, in order.
+  final List<String> writes = [];
+  int _nextId = 1;
+  String _id(String prefix) => '$prefix-${_nextId++}';
+
+  @override
+  Future<List<Station>> getStationsByHost(String hostId) async {
+    writes.add('getStationsByHost: $hostId');
+    return hostStations;
+  }
+
+  @override
+  Future<List<Charger>> getAllStationChargers(String stationId) async =>
+      allChargers;
+
+  @override
+  Future<Station> createStation({
+    required String hostId,
+    required String name,
+    String description = '',
+    String address = '',
+    required double latitude,
+    required double longitude,
+  }) async {
+    writes.add('createStation: $hostId $name');
+    return Station(
+      id: _id('station'),
+      hostId: hostId,
+      name: name,
+      description: description,
+      address: address,
+      latitude: latitude,
+      longitude: longitude,
+    );
+  }
+
+  @override
+  Future<Station> updateStation({
+    required String stationId,
+    required String name,
+    String description = '',
+    String address = '',
+    required double latitude,
+    required double longitude,
+  }) async {
+    writes.add('updateStation: $stationId $name');
+    return Station(
+      id: stationId,
+      name: name,
+      description: description,
+      address: address,
+      latitude: latitude,
+      longitude: longitude,
+    );
+  }
+
+  @override
+  Future<String> uploadStationImage({
+    required String folder,
+    required int index,
+    required Uint8List bytes,
+    required String fileExtension,
+  }) async {
+    writes.add('upload: $folder');
+    return '$folder/$index.$fileExtension';
+  }
+
+  @override
+  Future<StationImage> insertStationImage({
+    required String stationId,
+    required String imagePath,
+    required int displayOrder,
+  }) async {
+    writes.add('insertStationImage: $stationId');
+    return StationImage(
+      id: _id('img'),
+      stationId: stationId,
+      imageUrl: imagePath,
+      displayOrder: displayOrder,
+    );
+  }
+
+  @override
+  Future<void> deleteStationImage(String imageId) async =>
+      writes.add('deleteStationImage: $imageId');
+
+  @override
+  Future<StationBusinessImage> insertStationBusinessImage({
+    required String stationId,
+    required String imagePath,
+    required int displayOrder,
+  }) async {
+    writes.add('insertStationBusinessImage: $stationId');
+    return StationBusinessImage(
+      id: _id('bimg'),
+      stationId: stationId,
+      imageUrl: imagePath,
+      displayOrder: displayOrder,
+    );
+  }
+
+  @override
+  Future<void> deleteStationBusinessImage(String imageId) async =>
+      writes.add('deleteStationBusinessImage: $imageId');
+
+  @override
+  Future<StationBusiness> insertStationBusiness({
+    required String stationId,
+    required String businessType,
+    required String businessName,
+    String description = '',
+  }) async {
+    writes.add('insertStationBusiness: $stationId $businessName');
+    return StationBusiness(
+      id: _id('biz'),
+      stationId: stationId,
+      businessType: businessType,
+      businessName: businessName,
+      description: description,
+    );
+  }
+
+  @override
+  Future<void> softDeleteStationBusinesses(List<String> businessIds) async {
+    if (businessIds.isEmpty) return;
+    writes.add('softDeleteStationBusinesses: ${businessIds.join(',')}');
+  }
+
+  @override
+  Future<List<StationPromotion>> getStationPromotions(String stationId) async =>
       promotions;
+
+  @override
+  Future<StationPromotion> createPromotion({
+    required String stationId,
+    required String title,
+    String description = '',
+    DateTime? validFrom,
+    DateTime? validUntil,
+    String status = 'ACTIVE',
+    String termsAndConditions = '',
+  }) async {
+    writes.add('createPromotion: $stationId $title $status');
+    return StationPromotion(
+      id: _id('promo'),
+      stationId: stationId,
+      title: title,
+      description: description,
+      validFrom: validFrom,
+      validUntil: validUntil,
+      status: status,
+      termsAndConditions: termsAndConditions,
+    );
+  }
+
+  @override
+  Future<StationPromotion> updatePromotionStatus(
+    String promotionId,
+    String status,
+  ) async {
+    writes.add('updatePromotionStatus: $promotionId $status');
+    final current = promotions.firstWhere((p) => p.id == promotionId);
+    return StationPromotion(
+      id: current.id,
+      stationId: current.stationId,
+      title: current.title,
+      description: current.description,
+      validFrom: current.validFrom,
+      validUntil: current.validUntil,
+      status: status,
+      termsAndConditions: current.termsAndConditions,
+    );
+  }
+
+  @override
+  Future<void> deletePromotion(String promotionId) async =>
+      writes.add('deletePromotion: $promotionId');
 }
