@@ -1357,7 +1357,11 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
       child: Row(
         children: [
           // Navigate button — opens an external map app for directions.
-          NavigateButton(charger: widget.charger, size: 56),
+          NavigateButton(
+            latitude: widget.charger.latitude,
+            longitude: widget.charger.longitude,
+            size: 56,
+          ),
           const Padding(padding: EdgeInsets.only(left: 12)),
           Expanded(
             child: Container(

@@ -5,12 +5,14 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:voltshare_app/components/map_navigation.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
-import 'package:voltshare_app/models/charger_model.dart';
+import 'package:voltshare_app/controllers/station_controller.dart';
+import 'package:voltshare_app/models/station_model.dart';
 import 'package:voltshare_app/screens/bookings_screen.dart';
 import 'package:voltshare_app/screens/charger_detail_screen.dart';
 import 'package:voltshare_app/screens/profile_screen.dart';
 import 'package:voltshare_app/screens/search_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
+import 'package:voltshare_app/services/station_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,37 +28,47 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const double _initialSheetSize = 0.30;
 
+  /// Still used by the Search tab and the charger details screen (until those
+  /// move to stations in Tasks 3-4).
   final ChargerController _controller = ChargerController(
     ChargerSupabaseService(),
+  );
+
+  /// Drives the map: markers, the nearby list and the details popup.
+  final StationController _stationController = StationController(
+    StationSupabaseService(),
   );
   GoogleMapController? _mapController;
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
 
   /// How long to wait after the map camera stops moving before querying the
-  /// chargers in the new visible region, so panning/zooming doesn't fire a
+  /// stations in the new visible region, so panning/zooming doesn't fire a
   /// request on every frame.
   static const Duration _boundsDebounce = Duration(milliseconds: 500);
 
-  /// Max chargers shown for a single viewport. We actually request one more
+  /// Max stations shown for a single viewport. We actually request one more
   /// than this ([_boundsLimit] + 1) so we can tell "exactly at the cap" apart
   /// from "more than the cap exist" and warn the user; the extra row is then
   /// trimmed before display.
   static const int _boundsLimit = 200;
 
-  List<Charger> _chargers = List.empty();
-  bool _isLoadingChargers = false;
+  List<Station> _stations = List.empty();
+  bool _isLoadingStations = false;
+
+  /// True while "More details" is loading the station's chargers.
+  bool _isOpeningDetails = false;
   bool _isLocating = false;
   bool _locationGranted = false;
   bool _initialCameraPositioned = false;
   int _navIndex = 0;
 
-  /// True when the current viewport contains more chargers than [_boundsLimit],
+  /// True when the current viewport contains more stations than [_boundsLimit],
   /// so only the nearest [_boundsLimit] are shown. Drives the "zoom in to see
   /// more" banner.
   bool _resultsCapped = false;
 
-  /// Debounce timer for viewport-driven charger loading (see [_onCameraIdle]).
+  /// Debounce timer for viewport-driven station loading (see [_onCameraIdle]).
   Timer? _boundsDebounceTimer;
 
   /// Guards against an out-of-order viewport load: a slow earlier request
@@ -69,8 +81,8 @@ class _HomeScreenState extends State<HomeScreen> {
   /// location instead of querying twice (fallback, then refine).
   final ValueNotifier<LatLng?> _userLocation = ValueNotifier<LatLng?>(null);
 
-  /// When set, the sheet shows this charger's details instead of the list.
-  Charger? _selectedCharger;
+  /// When set, the sheet shows this station's details instead of the list.
+  Station? _selectedStation;
 
   /// Measured height of the details panel, used to position the recenter
   /// button just above it.
@@ -92,13 +104,13 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _sheetController.addListener(_onSheetMoved);
-    _controller.onSync.listen((bool syncState) {
+    _stationController.onSync.listen((bool syncState) {
       if (!mounted) return;
       setState(() {
-        _isLoadingChargers = syncState;
+        _isLoadingStations = syncState;
       });
     });
-    // Chargers are loaded from the map's visible region (see _onCameraIdle),
+    // Stations are loaded from the map's visible region (see _onCameraIdle),
     // not fetched all at once. The map centers on the user's location at
     // startup, which triggers the first viewport load once the camera settles.
     //
@@ -182,10 +194,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _initialCameraPositioned = true;
   }
 
-  /// Loads the chargers inside the map's current visible region, ordered by
+  /// Loads the stations inside the map's current visible region, ordered by
   /// distance from the user (or the viewport center when no fix is available).
   /// Debounced via [_onCameraIdle].
-  Future<void> _loadChargersInView() async {
+  Future<void> _loadStationsInView() async {
     final controller = _mapController;
     if (controller == null) return;
 
@@ -205,8 +217,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final token = ++_boundsLoadToken;
     try {
       // Ask for one more than the display cap so we can detect that the
-      // viewport actually holds more than _boundsLimit chargers.
-      final chargers = await _controller.fetchChargersInBounds(
+      // viewport actually holds more than _boundsLimit stations.
+      final stations = await _stationController.fetchStationsInBounds(
         userLat: origin.latitude,
         userLng: origin.longitude,
         minLat: bounds.southwest.latitude,
@@ -217,20 +229,20 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (!mounted || token != _boundsLoadToken) return;
 
-      final capped = chargers.length > _boundsLimit;
+      final capped = stations.length > _boundsLimit;
       // Trim the probe row so we never display more than the cap.
       final visible = capped
-          ? chargers.sublist(0, _boundsLimit)
-          : chargers;
+          ? stations.sublist(0, _boundsLimit)
+          : stations;
       setState(() {
-        _chargers = visible;
+        _stations = visible;
         _resultsCapped = capped;
       });
     } catch (_) {
       if (!mounted || token != _boundsLoadToken) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Could not load chargers. Please try again.'),
+          content: const Text('Could not load stations. Please try again.'),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -250,7 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// continuous pan/zoom only triggers one query after the user settles.
   void _onCameraIdle() {
     _boundsDebounceTimer?.cancel();
-    _boundsDebounceTimer = Timer(_boundsDebounce, _loadChargersInView);
+    _boundsDebounceTimer = Timer(_boundsDebounce, _loadStationsInView);
   }
 
   void _onSheetMoved() {
@@ -260,14 +272,14 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// Focuses the map on [charger] and shows its details in the sheet.
+  /// Focuses the map on [station] and shows its details in the sheet.
   /// Called from both a map marker tap and a list item tap.
-  void _selectCharger(Charger charger) {
-    setState(() => _selectedCharger = charger);
+  void _selectStation(Station station) {
+    setState(() => _selectedStation = station);
 
     _mapController?.animateCamera(
       CameraUpdate.newLatLngZoom(
-        LatLng(charger.latitude, charger.longitude),
+        LatLng(station.latitude, station.longitude),
         16,
       ),
     );
@@ -285,7 +297,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Returns from the details view back to the nearby list.
   void _clearSelection() {
     setState(() {
-      _selectedCharger = null;
+      _selectedStation = null;
       _detailsHeight = 0;
       // Reset immediately so the recenter button snaps back above the sheet
       // instead of waiting for the sheet to move.
@@ -406,6 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _sheetController.dispose();
     _mapController?.dispose();
     _userLocation.dispose();
+    _stationController.dispose();
     super.dispose();
   }
 
@@ -436,7 +449,7 @@ class _HomeScreenState extends State<HomeScreen> {
         // panel; in list mode it follows the sheet (capped at half screen).
         Positioned(
           right: 16,
-          bottom: _selectedCharger != null
+          bottom: _selectedStation != null
               ? _detailsHeight + 16
               : MediaQuery.of(context).size.height *
                         _sheetSize.clamp(0.0, 0.5) +
@@ -444,7 +457,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: _buildMapControls(),
         ),
 
-        if (_isLoadingChargers)
+        if (_isLoadingStations)
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
             right: 16,
@@ -464,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
         // "Too many results" banner: shown while the viewport holds more than
         // the display cap. Hidden during a reload so it doesn't flicker.
-        if (_resultsCapped && !_isLoadingChargers)
+        if (_resultsCapped && !_isLoadingStations)
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
             left: 16,
@@ -502,7 +515,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const Padding(padding: EdgeInsets.only(left: 10)),
           Expanded(
             child: Text(
-              'Not all chargers in this area are shown — only the '
+              'Not all stations in this area are shown — only the '
               '$_boundsLimit nearest. Zoom in to see the full list.',
               style: const TextStyle(
                 fontSize: 13,
@@ -526,10 +539,10 @@ class _HomeScreenState extends State<HomeScreen> {
       elevation: 2,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: _isLoadingChargers ? null : _loadChargersInView,
+        onTap: _isLoadingStations ? null : _loadStationsInView,
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: _isLoadingChargers
+          child: _isLoadingStations
               ? Container(
                   width: 24,
                   height: 24,
@@ -578,14 +591,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Set<Marker> _buildMarkers() {
-    return _chargers.map((charger) {
+    return _stations.map((station) {
       return Marker(
-        markerId: MarkerId(charger.id),
-        position: LatLng(charger.latitude, charger.longitude),
+        markerId: MarkerId(station.id),
+        position: LatLng(station.latitude, station.longitude),
         icon: BitmapDescriptor.defaultMarker,
         // InfoWindow disabled for now; tapping a marker raises the details
-        // sheet via _selectCharger instead of showing the plain Google bubble.
-        onTap: () => _selectCharger(charger),
+        // sheet via _selectStation instead of showing the plain Google bubble.
+        onTap: () => _selectStation(station),
       );
     }).toSet();
   }
@@ -662,7 +675,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Details mode: a bottom panel sized to its content (fixed height up to
     // the "More details" button), not draggable.
-    if (_selectedCharger != null) {
+    if (_selectedStation != null) {
       // Measure the panel's height after it lays out, so the recenter button
       // can sit right above it.
       WidgetsBinding.instance.addPostFrameCallback((_) => _measureDetails());
@@ -673,7 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
           decoration: sheetDecoration,
           child: SafeArea(
             top: false,
-            child: _buildDetailsView(_selectedCharger!),
+            child: _buildDetailsView(_selectedStation!),
           ),
         ),
       );
@@ -701,13 +714,13 @@ class _HomeScreenState extends State<HomeScreen> {
         // Drag handle + header at the top of the sheet.
         SliverToBoxAdapter(child: _buildSheetHeader()),
 
-        if (!_isLoadingChargers && _chargers.isEmpty)
+        if (!_isLoadingStations && _stations.isEmpty)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 32),
               child: Center(
                 child: Text(
-                  'No chargers found nearby.',
+                  'No stations found nearby.',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
                 ),
               ),
@@ -718,8 +731,8 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildChargerCard(_chargers[index]),
-              childCount: _chargers.length,
+              (context, index) => _buildStationCard(_stations[index]),
+              childCount: _stations.length,
             ),
           ),
         ),
@@ -727,7 +740,74 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildDetailsView(Charger charger) {
+  /// Temporary until the Station Detail screen (Task 3): loads the station's
+  /// chargers and opens the existing charger details for the first available
+  /// one.
+  Future<void> _openStationDetails(Station station) async {
+    if (_isOpeningDetails) return;
+    setState(() => _isOpeningDetails = true);
+    try {
+      final chargers = await _stationController.fetchStationChargers(
+        station.id,
+      );
+      if (!mounted) return;
+      final available = chargers.where((c) => c.status == 'available');
+      if (available.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No chargers are available at this station.'),
+          ),
+        );
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ChargerDetailScreen(
+            charger: available.first,
+            controller: _controller,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not load this station. Please try again.'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isOpeningDetails = false);
+    }
+  }
+
+  /// Wrapping row of connector-type pills, e.g. [CCS2] [Type 2].
+  Widget _buildConnectorChips(List<String> connectors) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final connector in connectors)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: _primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              connector,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: _primary,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDetailsView(Station station) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       child: Column(
@@ -765,17 +845,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      charger.name,
+                      station.name,
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: _dark,
                       ),
                     ),
-                    if (charger.address.isNotEmpty) ...[
+                    if (station.address.isNotEmpty) ...[
                       const Padding(padding: EdgeInsets.only(top: 4)),
                       Text(
-                        charger.address,
+                        station.address,
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade600,
@@ -795,22 +875,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const Padding(padding: EdgeInsets.only(top: 16)),
 
+          // Connector types offered by the station's available chargers.
+          if (station.connectorTypes.isNotEmpty) ...[
+            _buildConnectorChips(station.connectorTypes),
+            const Padding(padding: EdgeInsets.only(top: 8)),
+          ],
+
           // Quick info rows.
           _buildInfoRow(
-            Icons.attach_money,
-            'Price',
-            '฿${charger.pricePerKwh.toStringAsFixed(2)} / kWh',
+            Icons.ev_station,
+            'Chargers',
+            station.availabilityLabel,
           ),
-          _buildInfoRow(
-            Icons.bolt,
-            'Power',
-            '${charger.powerLabel} · ${charger.connectorType}',
-          ),
-          _buildInfoRow(
-            Icons.info_outline,
-            'Status',
-            charger.status.isNotEmpty ? charger.status : 'Unknown',
-          ),
+          if (station.priceFromLabel.isNotEmpty)
+            _buildInfoRow(
+              Icons.attach_money,
+              'Price',
+              station.priceFromLabel,
+            ),
+          if (station.maxPowerLabel.isNotEmpty)
+            _buildInfoRow(
+              Icons.bolt,
+              'Power',
+              station.maxPowerLabel,
+            ),
 
           const Padding(padding: EdgeInsets.only(top: 20)),
 
@@ -818,22 +906,18 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             children: [
               // Navigate button — opens an external map app for directions.
-              NavigateButton(charger: charger),
+              NavigateButton(
+                latitude: station.latitude,
+                longitude: station.longitude,
+              ),
               const Padding(padding: EdgeInsets.only(left: 12)),
               Expanded(
                 child: Container(
                   height: 54,
                   child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => ChargerDetailScreen(
-                            charger: charger,
-                            controller: _controller,
-                          ),
-                        ),
-                      );
-                    },
+                    onPressed: _isOpeningDetails
+                        ? null
+                        : () => _openStationDetails(station),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _primary,
                       foregroundColor: Colors.white,
@@ -842,13 +926,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: const Text(
-                      'More details',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    child: _isOpeningDetails
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'More details',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -906,7 +999,7 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Nearby Chargers',
+                'Nearby Stations',
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
@@ -931,9 +1024,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildChargerCard(Charger charger) {
+  /// Subtitle for a nearby-list card, e.g. "2/3 available · CCS2, Type 2 · 0.4 km".
+  String _stationSubtitle(Station station) {
+    final parts = <String>[station.availabilityLabel];
+    if (station.connectorTypes.isNotEmpty) {
+      parts.add(station.connectorTypes.join(', '));
+    }
+    if (station.distanceLabel.isNotEmpty) parts.add(station.distanceLabel);
+    return parts.join(' · ');
+  }
+
+  Widget _buildStationCard(Station station) {
     return GestureDetector(
-      onTap: () => _selectCharger(charger),
+      onTap: () => _selectStation(station),
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
         padding: const EdgeInsets.all(16),
@@ -959,7 +1062,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    charger.name,
+                    station.name,
                     style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
@@ -968,7 +1071,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const Padding(padding: EdgeInsets.only(top: 4)),
                   Text(
-                    charger.subtitle,
+                    _stationSubtitle(station),
                     style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                 ],

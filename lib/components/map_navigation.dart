@@ -1,19 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:voltshare_app/models/charger_model.dart';
-
 /// Shared external-map navigation helpers.
 ///
-/// Both the home map popup and the charger details screen let the user open a
-/// map app to get directions to a charger. This keeps that logic in one place:
-/// a bottom sheet to pick the map app, the launch logic for each app, and a
-/// reusable [NavigateButton] for the UI.
+/// The home map popup and the details screens let the user open a map app to
+/// get directions to a location (a station or a charger). This keeps that
+/// logic in one place: a bottom sheet to pick the map app, the launch logic
+/// for each app, and a reusable [NavigateButton] for the UI.
 const Color _navPrimary = Color(0xFF10B981);
 
 /// Shows a bottom sheet to pick which map app to navigate with, then opens the
-/// chosen app with directions to [charger].
-void showChargerNavigationOptions(BuildContext context, Charger charger) {
+/// chosen app with directions to ([latitude], [longitude]).
+void showNavigationOptions(
+  BuildContext context, {
+  required double latitude,
+  required double longitude,
+}) {
   showModalBottomSheet<void>(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -39,7 +41,7 @@ void showChargerNavigationOptions(BuildContext context, Charger charger) {
               title: const Text('Google Maps'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _openInGoogleMaps(context, charger);
+                _openInGoogleMaps(context, latitude, longitude);
               },
             ),
             ListTile(
@@ -47,7 +49,7 @@ void showChargerNavigationOptions(BuildContext context, Charger charger) {
               title: const Text('Apple Maps'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _openInAppleMaps(context, charger);
+                _openInAppleMaps(context, latitude, longitude);
               },
             ),
           ],
@@ -57,9 +59,11 @@ void showChargerNavigationOptions(BuildContext context, Charger charger) {
   );
 }
 
-Future<void> _openInGoogleMaps(BuildContext context, Charger charger) async {
-  final lat = charger.latitude;
-  final lng = charger.longitude;
+Future<void> _openInGoogleMaps(
+  BuildContext context,
+  double lat,
+  double lng,
+) async {
   // Prefer the Google Maps app scheme; fall back to the universal https URL.
   final appUri = Uri.parse(
     'comgooglemaps://?daddr=$lat,$lng&directionsmode=driving',
@@ -76,9 +80,11 @@ Future<void> _openInGoogleMaps(BuildContext context, Charger charger) async {
   }
 }
 
-Future<void> _openInAppleMaps(BuildContext context, Charger charger) async {
-  final lat = charger.latitude;
-  final lng = charger.longitude;
+Future<void> _openInAppleMaps(
+  BuildContext context,
+  double lat,
+  double lng,
+) async {
   final appUri = Uri.parse('maps://?daddr=$lat,$lng');
   final webUri = Uri.parse('https://maps.apple.com/?daddr=$lat,$lng');
 
@@ -100,12 +106,18 @@ void _showNavError(BuildContext context) {
 }
 
 /// A small square "navigate" icon button that opens the map-app picker for
-/// [charger]. Used beside primary action buttons on the home popup and the
-/// charger details screen.
+/// ([latitude], [longitude]). Used beside primary action buttons on the home
+/// popup and the details screens.
 class NavigateButton extends StatelessWidget {
-  const NavigateButton({super.key, required this.charger, this.size = 54});
+  const NavigateButton({
+    super.key,
+    required this.latitude,
+    required this.longitude,
+    this.size = 54,
+  });
 
-  final Charger charger;
+  final double latitude;
+  final double longitude;
 
   /// Width/height of the square button.
   final double size;
@@ -120,7 +132,11 @@ class NavigateButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(size / 2 >= 28 ? 28 : 16),
       ),
       child: IconButton(
-        onPressed: () => showChargerNavigationOptions(context, charger),
+        onPressed: () => showNavigationOptions(
+          context,
+          latitude: latitude,
+          longitude: longitude,
+        ),
         icon: const Icon(Icons.directions, color: _navPrimary),
         tooltip: 'Navigate',
       ),
