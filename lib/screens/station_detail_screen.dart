@@ -33,7 +33,8 @@ class StationDetailScreen extends StatefulWidget {
 
   /// Called when the driver taps Book on a charger. Defaults to opening
   /// [ReserveChargerScreen]; tests override it to avoid Supabase.
-  final void Function(BuildContext context, Charger charger)? onBookCharger;
+  final void Function(BuildContext context, Station station, Charger charger)?
+      onBookCharger;
 
   @override
   State<StationDetailScreen> createState() => _StationDetailScreenState();
@@ -240,12 +241,13 @@ class _StationDetailScreenState extends State<StationDetailScreen>
   void _bookCharger(Charger charger) {
     final onBook = widget.onBookCharger;
     if (onBook != null) {
-      onBook(context, charger);
+      onBook(context, widget.station, charger);
       return;
     }
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ReserveChargerScreen(charger: charger),
+        builder: (_) =>
+            ReserveChargerScreen(station: widget.station, charger: charger),
       ),
     );
   }

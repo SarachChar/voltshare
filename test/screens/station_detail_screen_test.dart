@@ -63,7 +63,10 @@ void main() {
           station: station,
           controller: stationController,
           reviewController: ReviewController(reviewService),
-          onBookCharger: (_, charger) => booked.add(charger),
+          onBookCharger: (_, bookedStation, charger) {
+            expect(bookedStation.id, 's1');
+            booked.add(charger);
+          },
         ),
       ),
     );

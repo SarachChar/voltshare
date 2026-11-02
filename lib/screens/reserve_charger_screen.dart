@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 
+import 'package:voltshare_app/components/booking_charger_card.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/controllers/reservation_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/models/reservation_model.dart';
+import 'package:voltshare_app/models/station_model.dart';
 import 'package:voltshare_app/screens/reservation_summary_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
 import 'package:voltshare_app/services/reservation_service.dart';
 
-/// Reservation flow opened from the charger detail screen's "Book This
-/// Charger" button. The driver picks a date, then one or more consecutive
+/// Reservation flow opened from a charger's "Book" button on the station
+/// details screen. The driver picks a date, then one or more consecutive
 /// 30-minute start-time slots, reviews a summary, and confirms.
 ///
 /// The grid of time slots is derived from the charger's weekly opening hours
@@ -20,11 +22,14 @@ import 'package:voltshare_app/services/reservation_service.dart';
 class ReserveChargerScreen extends StatefulWidget {
   const ReserveChargerScreen({
     super.key,
+    required this.station,
     required this.charger,
     this.controller,
     this.reservationController,
   });
 
+  /// The station the charger belongs to (name / address shown in the card).
+  final Station station;
   final Charger charger;
 
   /// Optional injected charger controller (useful for tests). Falls back to a
@@ -388,42 +393,7 @@ class _ReserveChargerScreenState extends State<ReserveChargerScreen> {
   // --- Charger card ---------------------------------------------------------
 
   Widget _buildChargerCard() {
-    final charger = widget.charger;
-    final specParts = <String>[
-      charger.powerLabel,
-      if (charger.chargerType.isNotEmpty) charger.chargerType,
-      if (charger.connectorType.isNotEmpty) charger.connectorType,
-      '฿${charger.pricePerKwh.toStringAsFixed(2)}/kWh',
-    ];
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            charger.name,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _primary,
-            ),
-          ),
-          const Padding(padding: EdgeInsets.only(top: 6)),
-          Text(
-            specParts.join(' · '),
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ],
-      ),
-    );
+    return BookingChargerCard(station: widget.station, charger: widget.charger);
   }
 
   // --- Calendar -------------------------------------------------------------
@@ -759,6 +729,7 @@ class _ReserveChargerScreenState extends State<ReserveChargerScreen> {
     final result = await Navigator.of(context).push<ReservationSummaryResult>(
       MaterialPageRoute(
         builder: (_) => ReservationSummaryScreen(
+          station: widget.station,
           charger: widget.charger,
           date: date,
           startTime: startTime,

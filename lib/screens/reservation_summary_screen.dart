@@ -3,9 +3,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voltshare_app/controllers/payment_controller.dart';
 import 'package:voltshare_app/controllers/payment_method_controller.dart';
+import 'package:voltshare_app/components/booking_charger_card.dart';
 import 'package:voltshare_app/controllers/reservation_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/models/payment_method_model.dart';
+import 'package:voltshare_app/models/station_model.dart';
 import 'package:voltshare_app/screens/payment_failed_screen.dart';
 import 'package:voltshare_app/screens/payment_methods_screen.dart';
 import 'package:voltshare_app/screens/reservation_confirmed_screen.dart';
@@ -28,6 +30,7 @@ import 'package:voltshare_app/services/reservation_service.dart';
 class ReservationSummaryScreen extends StatefulWidget {
   const ReservationSummaryScreen({
     super.key,
+    required this.station,
     required this.charger,
     required this.date,
     required this.startTime,
@@ -42,6 +45,8 @@ class ReservationSummaryScreen extends StatefulWidget {
     this.paymentController,
   });
 
+  /// The station the charger belongs to (name / address shown in the card).
+  final Station station;
   final Charger charger;
   final DateTime date;
 
@@ -249,42 +254,7 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
   // --- Charger card ---------------------------------------------------------
 
   Widget _buildChargerCard() {
-    final charger = widget.charger;
-    final specParts = <String>[
-      charger.powerLabel,
-      if (charger.chargerType.isNotEmpty) charger.chargerType,
-      if (charger.connectorType.isNotEmpty) charger.connectorType,
-      '฿${charger.pricePerKwh.toStringAsFixed(2)}/kWh',
-    ];
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            charger.name,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _primary,
-            ),
-          ),
-          const Padding(padding: EdgeInsets.only(top: 6)),
-          Text(
-            specParts.join(' · '),
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ],
-      ),
-    );
+    return BookingChargerCard(station: widget.station, charger: widget.charger);
   }
 
   // --- Summary --------------------------------------------------------------
@@ -309,6 +279,10 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
             ),
           ),
           const Padding(padding: EdgeInsets.only(top: 14)),
+          _summaryRow('Station', widget.station.name),
+          const Padding(padding: EdgeInsets.only(top: 10)),
+          _summaryRow('Charger', widget.charger.name),
+          const Padding(padding: EdgeInsets.only(top: 10)),
           _summaryRow('Date', widget.dateLabel),
           const Padding(padding: EdgeInsets.only(top: 10)),
           _summaryRow('Time', widget.timeLabel),
@@ -613,6 +587,7 @@ class _ReservationSummaryScreenState extends State<ReservationSummaryScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ReservationConfirmedScreen(
+          stationName: widget.station.name,
           chargerName: widget.charger.name,
           dateLabel: widget.dateLabel,
           timeLabel: widget.timeLabel,

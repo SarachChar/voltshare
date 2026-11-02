@@ -7,12 +7,14 @@ import 'package:flutter/material.dart';
 class ReservationConfirmedScreen extends StatelessWidget {
   const ReservationConfirmedScreen({
     super.key,
+    required this.stationName,
     required this.chargerName,
     required this.dateLabel,
     required this.timeLabel,
     required this.durationLabel,
   });
 
+  final String stationName;
   final String chargerName;
   final String dateLabel;
   final String timeLabel;
@@ -103,6 +105,8 @@ class ReservationConfirmedScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
+          _summaryRow('Station', stationName),
+          const Padding(padding: EdgeInsets.only(top: 14)),
           _summaryRow('Charger', chargerName),
           const Padding(padding: EdgeInsets.only(top: 14)),
           _summaryRow('Date', dateLabel),
