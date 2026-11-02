@@ -121,3 +121,167 @@ class Station {
     return 'up to $value kW';
   }
 }
+
+/// A photo of a station, stored in `station_images`. [imageUrl] is resolved to
+/// a public URL by the service layer before it reaches the UI.
+class StationImage {
+  final String id;
+  final String stationId;
+  final String imageUrl;
+  final int displayOrder;
+
+  const StationImage({
+    required this.id,
+    required this.stationId,
+    required this.imageUrl,
+    this.displayOrder = 0,
+  });
+
+  factory StationImage.fromJson(Map<String, dynamic> json) {
+    return StationImage(
+      id: json['id'] as String,
+      stationId: json['station_id'] as String? ?? '',
+      imageUrl: json['image_url'] as String? ?? '',
+      displayOrder: (json['display_order'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  StationImage copyWith({String? imageUrl}) {
+    return StationImage(
+      id: id,
+      stationId: stationId,
+      imageUrl: imageUrl ?? this.imageUrl,
+      displayOrder: displayOrder,
+    );
+  }
+}
+
+/// A photo of the businesses around a station, stored in
+/// `station_business_images`. Shared by all of the station's businesses.
+class StationBusinessImage {
+  final String id;
+  final String stationId;
+  final String imageUrl;
+  final int displayOrder;
+
+  const StationBusinessImage({
+    required this.id,
+    required this.stationId,
+    required this.imageUrl,
+    this.displayOrder = 0,
+  });
+
+  factory StationBusinessImage.fromJson(Map<String, dynamic> json) {
+    return StationBusinessImage(
+      id: json['id'] as String,
+      stationId: json['station_id'] as String? ?? '',
+      imageUrl: json['image_url'] as String? ?? '',
+      displayOrder: (json['display_order'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  StationBusinessImage copyWith({String? imageUrl}) {
+    return StationBusinessImage(
+      id: id,
+      stationId: stationId,
+      imageUrl: imageUrl ?? this.imageUrl,
+      displayOrder: displayOrder,
+    );
+  }
+}
+
+/// A business drivers can use while charging, stored in `station_businesses`.
+/// Soft-deleted rows are filtered out by the service layer.
+class StationBusiness {
+  final String id;
+  final String stationId;
+
+  /// DB value, e.g. `CAFE`.
+  final String businessType;
+  final String businessName;
+  final String description;
+
+  const StationBusiness({
+    required this.id,
+    required this.stationId,
+    required this.businessType,
+    required this.businessName,
+    this.description = '',
+  });
+
+  factory StationBusiness.fromJson(Map<String, dynamic> json) {
+    return StationBusiness(
+      id: json['id'] as String,
+      stationId: json['station_id'] as String? ?? '',
+      businessType: json['business_type'] as String? ?? '',
+      businessName: json['business_name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+    );
+  }
+}
+
+/// A promotion shown on a station, stored in `station_promotions`.
+/// [status] is "ACTIVE" / "INACTIVE" / "EXPIRED"; dates are local time.
+class StationPromotion {
+  final String id;
+  final String stationId;
+  final String title;
+  final String description;
+  final DateTime? validFrom;
+  final DateTime? validUntil;
+  final String status;
+  final String termsAndConditions;
+
+  const StationPromotion({
+    required this.id,
+    required this.stationId,
+    required this.title,
+    this.description = '',
+    this.validFrom,
+    this.validUntil,
+    this.status = 'ACTIVE',
+    this.termsAndConditions = '',
+  });
+
+  factory StationPromotion.fromJson(Map<String, dynamic> json) {
+    return StationPromotion(
+      id: json['id'] as String,
+      stationId: json['station_id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      validFrom: _parseDate(json['valid_from']),
+      validUntil: _parseDate(json['valid_until']),
+      status: json['status'] as String? ?? 'ACTIVE',
+      termsAndConditions: json['terms_and_conditions'] as String? ?? '',
+    );
+  }
+
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value.toLocal();
+    return DateTime.tryParse(value.toString())?.toLocal();
+  }
+
+  bool get isActive => status.toUpperCase() == 'ACTIVE';
+
+  /// "1 Jan 2026 - 31 Mar 2026", "Until …", "From …" or "No expiry".
+  String get validRangeLabel {
+    final from = validFrom;
+    final until = validUntil;
+    if (from == null && until == null) return 'No expiry';
+    if (from != null && until != null) {
+      return '${formatDate(from)} - ${formatDate(until)}';
+    }
+    if (until != null) return 'Until ${formatDate(until)}';
+    return 'From ${formatDate(from!)}';
+  }
+
+  static const List<String> _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// Formats a date as "1 Jan 2026".
+  static String formatDate(DateTime date) =>
+      '${date.day} ${_months[date.month - 1]} ${date.year}';
+}

@@ -39,4 +39,14 @@ class ReviewController {
     int offset = 0,
   }) =>
       service.getChargerReviews(chargerId, limit: limit, offset: offset);
+
+  Future<ChargerReviewSummary> fetchStationReviewSummary(String stationId) =>
+      service.getStationReviewSummary(stationId);
+
+  Future<List<ChargerReview>> fetchStationReviews(
+    String stationId, {
+    int limit = 20,
+    int offset = 0,
+  }) =>
+      service.getStationReviews(stationId, limit: limit, offset: offset);
 }

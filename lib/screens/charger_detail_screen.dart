@@ -5,7 +5,7 @@ import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/controllers/review_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/models/review_model.dart';
-import 'package:voltshare_app/screens/charger_reviews_screen.dart';
+import 'package:voltshare_app/screens/reviews_screen.dart';
 import 'package:voltshare_app/screens/photo_viewer_screen.dart';
 import 'package:voltshare_app/screens/reserve_charger_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
@@ -125,10 +125,17 @@ class _ChargerDetailScreenState extends State<ChargerDetailScreen>
   void _openAllReviews() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ChargerReviewsScreen(
-          chargerId: widget.charger.id,
-          chargerName: widget.charger.name,
+        builder: (_) => ReviewsScreen(
+          subtitle: widget.charger.name,
           summary: _reviewSummary,
+          loadSummary: () =>
+              _reviewController.fetchChargerReviewSummary(widget.charger.id),
+          loadPage: ({required int limit, required int offset}) =>
+              _reviewController.fetchChargerReviews(
+                widget.charger.id,
+                limit: limit,
+                offset: offset,
+              ),
         ),
       ),
     );

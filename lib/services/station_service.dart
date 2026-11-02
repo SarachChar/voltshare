@@ -25,11 +25,32 @@ abstract class StationService {
   /// The live chargers of [stationId] ('available' and 'unavailable'),
   /// available first, then by name.
   Future<List<Charger>> getStationChargers(String stationId);
+
+  /// Weekly hours for each of [chargerIds] in one query, keyed by charger id.
+  /// Chargers with no rows are absent from the map.
+  Future<Map<String, List<ChargerAvailability>>> getChargersAvailability(
+    List<String> chargerIds,
+  );
+
+  /// The station's photos, ordered by `display_order`, as public URLs.
+  Future<List<StationImage>> getStationImages(String stationId);
+
+  /// The station's non-deleted businesses, oldest first.
+  Future<List<StationBusiness>> getStationBusinesses(String stationId);
+
+  /// Photos of the businesses around the station, ordered, as public URLs.
+  Future<List<StationBusinessImage>> getStationBusinessImages(String stationId);
+
+  /// ACTIVE, non-deleted promotions of the station, newest first.
+  Future<List<StationPromotion>> getActivePromotions(String stationId);
 }
 
 /// Supabase-backed implementation.
 class StationSupabaseService implements StationService {
   final SupabaseClient _client = Supabase.instance.client;
+
+  /// Storage bucket that holds station and business photos.
+  static const String _imageBucket = 'voltshare_charger';
 
   @override
   Future<List<Station>> getStationsInBounds({
@@ -70,5 +91,93 @@ class StationSupabaseService implements StationService {
     final available = chargers.where((c) => c.status == 'available');
     final others = chargers.where((c) => c.status != 'available');
     return [...available, ...others];
+  }
+
+  @override
+  Future<Map<String, List<ChargerAvailability>>> getChargersAvailability(
+    List<String> chargerIds,
+  ) async {
+    if (chargerIds.isEmpty) return const {};
+    final List<dynamic> data = await _client
+        .from('charger_availability')
+        .select()
+        .inFilter('charger_id', chargerIds)
+        .order('day_of_week', ascending: true);
+
+    final byCharger = <String, List<ChargerAvailability>>{};
+    for (final row in data) {
+      final slot = ChargerAvailability.fromJson(row as Map<String, dynamic>);
+      byCharger.putIfAbsent(slot.chargerId, () => []).add(slot);
+    }
+    return byCharger;
+  }
+
+  @override
+  Future<List<StationImage>> getStationImages(String stationId) async {
+    final List<dynamic> data = await _client
+        .from('station_images')
+        .select()
+        .eq('station_id', stationId)
+        .order('display_order', ascending: true);
+
+    return data
+        .map((row) => StationImage.fromJson(row as Map<String, dynamic>))
+        .map((image) => image.copyWith(imageUrl: _resolvedUrl(image.imageUrl)))
+        .toList();
+  }
+
+  @override
+  Future<List<StationBusiness>> getStationBusinesses(String stationId) async {
+    final List<dynamic> data = await _client
+        .from('station_businesses')
+        .select()
+        .eq('station_id', stationId)
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: true);
+
+    return data
+        .map((row) => StationBusiness.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<List<StationBusinessImage>> getStationBusinessImages(
+    String stationId,
+  ) async {
+    final List<dynamic> data = await _client
+        .from('station_business_images')
+        .select()
+        .eq('station_id', stationId)
+        .order('display_order', ascending: true);
+
+    return data
+        .map((row) =>
+            StationBusinessImage.fromJson(row as Map<String, dynamic>))
+        .map((image) => image.copyWith(imageUrl: _resolvedUrl(image.imageUrl)))
+        .toList();
+  }
+
+  @override
+  Future<List<StationPromotion>> getActivePromotions(String stationId) async {
+    // The expire-station-promotions cron flips lapsed rows to EXPIRED once a
+    // day, so a promotion can stay ACTIVE for up to a day past valid_until.
+    final List<dynamic> data = await _client
+        .from('station_promotions')
+        .select()
+        .eq('station_id', stationId)
+        .eq('status', 'ACTIVE')
+        .isFilter('deleted_at', null)
+        .order('created_at', ascending: false);
+
+    return data
+        .map((row) => StationPromotion.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Full URLs are kept as-is; anything else is a path in [_imageBucket].
+  String _resolvedUrl(String rawValue) {
+    final raw = rawValue.trim();
+    if (raw.isEmpty || raw.startsWith('http')) return raw;
+    return _client.storage.from(_imageBucket).getPublicUrl(raw);
   }
 }

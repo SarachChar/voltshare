@@ -2,52 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voltshare_app/controllers/station_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/models/station_model.dart';
-import 'package:voltshare_app/services/station_service.dart';
 
-class _FakeStationService implements StationService {
-  List<Station> stations = const [];
-  List<Charger> chargers = const [];
-  Object? error;
-
-  Map<String, Object?>? lastBoundsCall;
-  String? lastChargersStationId;
-
-  @override
-  Future<List<Station>> getStationsInBounds({
-    required double userLat,
-    required double userLng,
-    required double minLat,
-    required double minLng,
-    required double maxLat,
-    required double maxLng,
-    int limit = 200,
-  }) async {
-    lastBoundsCall = {
-      'userLat': userLat,
-      'userLng': userLng,
-      'minLat': minLat,
-      'minLng': minLng,
-      'maxLat': maxLat,
-      'maxLng': maxLng,
-      'limit': limit,
-    };
-    if (error != null) throw error!;
-    return stations;
-  }
-
-  @override
-  Future<List<Charger>> getStationChargers(String stationId) async {
-    lastChargersStationId = stationId;
-    return chargers;
-  }
-}
+import '../fakes/fake_station_service.dart';
 
 void main() {
-  late _FakeStationService service;
+  late FakeStationService service;
   late StationController controller;
 
   setUp(() {
-    service = _FakeStationService();
+    service = FakeStationService();
     controller = StationController(service);
   });
 
@@ -131,5 +94,30 @@ void main() {
 
     expect(service.lastChargersStationId, 's9');
     expect(result.map((c) => c.id), ['c1']);
+  });
+
+  test('fetchChargersWeek returns a full week for every charger', () async {
+    service.availability = {
+      'c1': [
+        ChargerAvailability(
+          id: 'a1',
+          chargerId: 'c1',
+          dayOfWeek: 1,
+          startTime: '08:00:00',
+          endTime: '20:00:00',
+        ),
+      ],
+    };
+
+    final weeks = await controller.fetchChargersWeek(['c1', 'c2']);
+
+    expect(service.lastAvailabilityIds, ['c1', 'c2']);
+    expect(weeks.keys, ['c1', 'c2']);
+    expect(weeks['c1']!.length, 7);
+    expect(weeks['c1']![1].timeRangeLabel, '08:00 - 20:00');
+    expect(weeks['c1']![0].isClosed, isTrue);
+    // A charger with no rows is a fully closed week, not missing.
+    expect(weeks['c2']!.length, 7);
+    expect(weeks['c2']!.every((d) => d.isClosed), isTrue);
   });
 }

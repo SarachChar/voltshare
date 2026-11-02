@@ -52,6 +52,32 @@ class StationController {
     return service.getStationChargers(stationId);
   }
 
+  /// Weekly hours of each charger in [chargerIds], each expanded to a full
+  /// Sunday..Saturday week (missing days shown as closed).
+  Future<Map<String, List<ChargerAvailability>>> fetchChargersWeek(
+    List<String> chargerIds,
+  ) async {
+    final rows = await service.getChargersAvailability(chargerIds);
+    return {
+      for (final id in chargerIds)
+        id: ChargerAvailability.fullWeek(id, rows[id] ?? const []),
+    };
+  }
+
+  Future<List<StationImage>> fetchStationImages(String stationId) =>
+      service.getStationImages(stationId);
+
+  Future<List<StationBusiness>> fetchStationBusinesses(String stationId) =>
+      service.getStationBusinesses(stationId);
+
+  Future<List<StationBusinessImage>> fetchStationBusinessImages(
+    String stationId,
+  ) =>
+      service.getStationBusinessImages(stationId);
+
+  Future<List<StationPromotion>> fetchActivePromotions(String stationId) =>
+      service.getActivePromotions(stationId);
+
   void dispose() {
     _onSyncController.close();
   }

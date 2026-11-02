@@ -8,9 +8,9 @@ import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/controllers/station_controller.dart';
 import 'package:voltshare_app/models/station_model.dart';
 import 'package:voltshare_app/screens/bookings_screen.dart';
-import 'package:voltshare_app/screens/charger_detail_screen.dart';
 import 'package:voltshare_app/screens/profile_screen.dart';
 import 'package:voltshare_app/screens/search_screen.dart';
+import 'package:voltshare_app/screens/station_detail_screen.dart';
 import 'package:voltshare_app/services/charger_service.dart';
 import 'package:voltshare_app/services/station_service.dart';
 
@@ -28,8 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const double _initialSheetSize = 0.30;
 
-  /// Still used by the Search tab and the charger details screen (until those
-  /// move to stations in Tasks 3-4).
+  /// Still used by the Search tab (until it moves to stations in Task 4).
   final ChargerController _controller = ChargerController(
     ChargerSupabaseService(),
   );
@@ -56,8 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Station> _stations = List.empty();
   bool _isLoadingStations = false;
 
-  /// True while "More details" is loading the station's chargers.
-  bool _isOpeningDetails = false;
   bool _isLocating = false;
   bool _locationGranted = false;
   bool _initialCameraPositioned = false;
@@ -740,45 +737,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Temporary until the Station Detail screen (Task 3): loads the station's
-  /// chargers and opens the existing charger details for the first available
-  /// one.
-  Future<void> _openStationDetails(Station station) async {
-    if (_isOpeningDetails) return;
-    setState(() => _isOpeningDetails = true);
-    try {
-      final chargers = await _stationController.fetchStationChargers(
-        station.id,
-      );
-      if (!mounted) return;
-      final available = chargers.where((c) => c.status == 'available');
-      if (available.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No chargers are available at this station.'),
-          ),
-        );
-        return;
-      }
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ChargerDetailScreen(
-            charger: available.first,
-            controller: _controller,
-          ),
+  void _openStationDetails(Station station) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => StationDetailScreen(
+          station: station,
+          controller: _stationController,
         ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Could not load this station. Please try again.'),
-          backgroundColor: Colors.red.shade600,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isOpeningDetails = false);
-    }
+      ),
+    );
   }
 
   /// Wrapping row of connector-type pills, e.g. [CCS2] [Type 2].
@@ -915,9 +882,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Container(
                   height: 54,
                   child: ElevatedButton(
-                    onPressed: _isOpeningDetails
-                        ? null
-                        : () => _openStationDetails(station),
+                    onPressed: () => _openStationDetails(station),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _primary,
                       foregroundColor: Colors.white,
@@ -926,22 +891,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: _isOpeningDetails
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Text(
-                            'More details',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                    child: const Text(
+                      'More details',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
               ),

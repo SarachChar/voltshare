@@ -27,6 +27,16 @@ abstract class ReviewService {
     int limit = 20,
     int offset = 0,
   });
+
+  /// Average rating + count across every charger of a station.
+  Future<ChargerReviewSummary> getStationReviewSummary(String stationId);
+
+  /// A station's reviews (all chargers), newest first, censored names.
+  Future<List<ChargerReview>> getStationReviews(
+    String stationId, {
+    int limit = 20,
+    int offset = 0,
+  });
 }
 
 class ReviewSupabaseService implements ReviewService {
@@ -87,6 +97,35 @@ class ReviewSupabaseService implements ReviewService {
       'charger_reviews',
       params: {
         'p_charger_id': chargerId,
+        'p_limit': limit,
+        'p_offset': offset,
+      },
+    );
+    return data
+        .map((row) => ChargerReview.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<ChargerReviewSummary> getStationReviewSummary(String stationId) async {
+    final List<dynamic> data = await _client.rpc(
+      'station_review_summary',
+      params: {'p_station_id': stationId},
+    );
+    if (data.isEmpty) return ChargerReviewSummary.empty;
+    return ChargerReviewSummary.fromJson(data.first as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<ChargerReview>> getStationReviews(
+    String stationId, {
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final List<dynamic> data = await _client.rpc(
+      'station_reviews',
+      params: {
+        'p_station_id': stationId,
         'p_limit': limit,
         'p_offset': offset,
       },

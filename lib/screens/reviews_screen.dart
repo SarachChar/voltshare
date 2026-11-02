@@ -1,33 +1,41 @@
 import 'package:flutter/material.dart';
 
 import 'package:voltshare_app/components/review_card.dart';
-import 'package:voltshare_app/controllers/review_controller.dart';
 import 'package:voltshare_app/models/review_model.dart';
-import 'package:voltshare_app/services/review_service.dart';
 
-/// All reviews of one charger, newest first. Loads [_pageSize] at a time and
-/// fetches the next page as the driver nears the bottom of the list.
-class ChargerReviewsScreen extends StatefulWidget {
-  const ChargerReviewsScreen({
+/// Loads one page of reviews, newest first.
+typedef ReviewPageLoader = Future<List<ChargerReview>> Function({
+  required int limit,
+  required int offset,
+});
+
+/// All reviews of a station (or a single charger), newest first. Loads
+/// [_pageSize] at a time and fetches the next page as the driver nears the
+/// bottom of the list. What to load comes from [loadSummary] / [loadPage], so
+/// the same screen serves both station and charger reviews.
+class ReviewsScreen extends StatefulWidget {
+  const ReviewsScreen({
     super.key,
-    required this.chargerId,
-    required this.chargerName,
+    required this.subtitle,
+    required this.loadSummary,
+    required this.loadPage,
     this.summary = ChargerReviewSummary.empty,
-    this.controller,
   });
 
-  final String chargerId;
-  final String chargerName;
+  /// Shown under the "Reviews" title, e.g. the station name.
+  final String subtitle;
 
-  /// Shown in the header; reloaded on pull-to-refresh.
+  final Future<ChargerReviewSummary> Function() loadSummary;
+  final ReviewPageLoader loadPage;
+
+  /// Shown in the header until the first refresh completes.
   final ChargerReviewSummary summary;
-  final ReviewController? controller;
 
   @override
-  State<ChargerReviewsScreen> createState() => _ChargerReviewsScreenState();
+  State<ReviewsScreen> createState() => _ReviewsScreenState();
 }
 
-class _ChargerReviewsScreenState extends State<ChargerReviewsScreen> {
+class _ReviewsScreenState extends State<ReviewsScreen> {
   static const Color _primary = Color(0xFF10B981);
   static const Color _navy = Color(0xFF0F1D3A);
   static const Color _muted = Color(0xFF64748B);
@@ -35,9 +43,6 @@ class _ChargerReviewsScreenState extends State<ChargerReviewsScreen> {
   static const Color _border = Color(0xFFC8EDE0);
   static const Color _star = Color(0xFFF59E0B);
   static const int _pageSize = 20;
-
-  late final ReviewController _controller =
-      widget.controller ?? ReviewController(ReviewSupabaseService());
 
   late ChargerReviewSummary _summary = widget.summary;
   final List<ChargerReview> _reviews = [];
@@ -59,8 +64,8 @@ class _ChargerReviewsScreenState extends State<ChargerReviewsScreen> {
     });
     try {
       final results = await Future.wait([
-        _controller.fetchChargerReviewSummary(widget.chargerId),
-        _controller.fetchChargerReviews(widget.chargerId, limit: _pageSize),
+        widget.loadSummary(),
+        widget.loadPage(limit: _pageSize, offset: 0),
       ]);
       if (!mounted) return;
       final page = results[1] as List<ChargerReview>;
@@ -85,8 +90,7 @@ class _ChargerReviewsScreenState extends State<ChargerReviewsScreen> {
     if (_isLoadingMore || !_hasMore) return;
     setState(() => _isLoadingMore = true);
     try {
-      final page = await _controller.fetchChargerReviews(
-        widget.chargerId,
+      final page = await widget.loadPage(
         limit: _pageSize,
         offset: _reviews.length,
       );
@@ -152,7 +156,7 @@ class _ChargerReviewsScreenState extends State<ChargerReviewsScreen> {
                 ),
               ),
               Text(
-                widget.chargerName,
+                widget.subtitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 14, color: _muted),
