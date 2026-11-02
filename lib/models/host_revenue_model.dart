@@ -72,6 +72,8 @@ class RevenueSummary {
 class ChargerRevenue {
   final String chargerId;
   final String name;
+  final String stationId;
+  final String stationName;
   final int sessions;
   final double gross;
   final double net;
@@ -79,14 +81,25 @@ class ChargerRevenue {
   ChargerRevenue({
     required this.chargerId,
     required this.name,
+    this.stationId = '',
+    this.stationName = '',
     this.sessions = 0,
     this.gross = 0,
     this.net = 0,
   });
 
+  /// Row title, e.g. "Siam EV Hub · Charger 2". Falls back to the charger
+  /// name (or "Charger") when the station is unknown.
+  String get displayName {
+    final charger = name.isNotEmpty ? name : 'Charger';
+    return stationName.isNotEmpty ? '$stationName · $charger' : charger;
+  }
+
   factory ChargerRevenue.fromJson(Map<String, dynamic> json) => ChargerRevenue(
         chargerId: json['charger_id'] as String? ?? '',
         name: json['name'] as String? ?? '',
+        stationId: json['station_id'] as String? ?? '',
+        stationName: json['station_name'] as String? ?? '',
         sessions: (json['sessions'] as num?)?.toInt() ?? 0,
         gross: _num(json['gross']),
         net: _num(json['net']),

@@ -159,27 +159,19 @@ class ChargerController {
     return service.deletePromotion(promotionId);
   }
 
-  /// Creates a new charger row and returns the saved charger (with its id).
+  /// Creates a new charger in [stationId] (status 'review' by default).
   Future<Charger> createCharger({
-    required String hostId,
+    required String stationId,
     required String name,
-    String description = '',
-    String address = '',
-    double latitude = 0.0,
-    double longitude = 0.0,
     String chargerType = '',
     String connectorType = '',
     double powerKw = 0.0,
     double pricePerKwh = 0.0,
-    String status = 'available',
+    String status = 'review',
   }) {
     return service.createCharger(
-      hostId: hostId,
+      stationId: stationId,
       name: name,
-      description: description,
-      address: address,
-      latitude: latitude,
-      longitude: longitude,
       chargerType: chargerType,
       connectorType: connectorType,
       powerKw: powerKw,
@@ -188,30 +180,23 @@ class ChargerController {
     );
   }
 
-  /// Updates an existing charger row and returns the saved charger.
+  /// Updates a charger's name and price; hardware specs only when non-null
+  /// (see [ChargerService.updateCharger]).
   Future<Charger> updateCharger({
     required String chargerId,
     required String name,
-    String description = '',
-    String address = '',
-    double latitude = 0.0,
-    double longitude = 0.0,
-    String chargerType = '',
-    String connectorType = '',
-    double powerKw = 0.0,
-    double pricePerKwh = 0.0,
+    required double pricePerKwh,
+    String? chargerType,
+    String? connectorType,
+    double? powerKw,
   }) {
     return service.updateCharger(
       chargerId: chargerId,
       name: name,
-      description: description,
-      address: address,
-      latitude: latitude,
-      longitude: longitude,
+      pricePerKwh: pricePerKwh,
       chargerType: chargerType,
       connectorType: connectorType,
       powerKw: powerKw,
-      pricePerKwh: pricePerKwh,
     );
   }
 

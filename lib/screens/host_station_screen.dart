@@ -1,31 +1,54 @@
 import 'package:flutter/material.dart';
 import 'package:voltshare_app/components/create_promotion_sheet.dart';
+import 'package:voltshare_app/controllers/charger_controller.dart';
+import 'package:voltshare_app/controllers/host_revenue_controller.dart';
 import 'package:voltshare_app/controllers/station_controller.dart';
 import 'package:voltshare_app/models/charger_model.dart';
+import 'package:voltshare_app/models/host_revenue_model.dart';
 import 'package:voltshare_app/models/station_model.dart';
+import 'package:voltshare_app/screens/add_charger_screen.dart';
 import 'package:voltshare_app/screens/add_station_screen.dart';
+import 'package:voltshare_app/services/charger_service.dart';
+import 'package:voltshare_app/services/host_revenue_service.dart';
 import 'package:voltshare_app/services/station_service.dart';
 
-/// Host view of one station: its details (with Edit), its chargers, and its
-/// promotions. Calls [onChanged] when the station itself is edited, so the
-/// dashboard can reload its list.
-///
-/// The charger list is read-only for now; status toggles, per-charger revenue
-/// and "Add Charger" come in the next step.
+/// Host view of one station: its details (with Edit), its chargers (add,
+/// edit, on/off toggle, this month's revenue) and its promotions. Calls
+/// [onChanged] whenever something the dashboard shows changed (station
+/// details, a new charger, a toggled charger), so it can reload its list.
 class HostStationScreen extends StatefulWidget {
   const HostStationScreen({
     super.key,
     required this.station,
     this.controller,
+    this.chargerController,
+    this.revenueController,
     this.openEditStation,
+    this.openChargerForm,
     this.onChanged,
   });
 
   final Station station;
   final StationController? controller;
 
-  /// Called after the station's details were saved.
+  /// Status toggle. Defaults to a Supabase-backed controller.
+  final ChargerController? chargerController;
+
+  /// This month's per-charger figures. Defaults to Supabase.
+  final HostRevenueController? revenueController;
+
+  /// Called after something shown on the dashboard changed.
   final VoidCallback? onChanged;
+
+  /// Opens the add (charger == null) / edit charger flow and returns the
+  /// saved charger. Defaults to [AddChargerScreen]; tests override it.
+  final Future<Charger?> Function(
+    BuildContext context,
+    Station station,
+    Charger? charger,
+    int existingChargerCount,
+  )?
+  openChargerForm;
 
   /// Opens the edit flow and returns the saved station (null if cancelled).
   /// Defaults to [AddStationScreen]; tests override it.
@@ -45,11 +68,25 @@ class _HostStationScreenState extends State<HostStationScreen> {
   late final StationController _controller =
       widget.controller ?? StationController(StationSupabaseService());
 
+  late final ChargerController _chargerController =
+      widget.chargerController ?? ChargerController(ChargerSupabaseService());
+
+  late final HostRevenueController _revenueController =
+      widget.revenueController ??
+      HostRevenueController(HostRevenueSupabaseService());
+
   late Station _station = widget.station;
 
   List<Charger> _chargers = const [];
   bool _isLoadingChargers = true;
   bool _chargersFailed = false;
+
+  /// Charger ids whose status update is in flight (their switch is disabled).
+  final Set<String> _togglingStatus = {};
+
+  /// This month's revenue for the host; null until loaded (or on error), in
+  /// which case the figures show "–".
+  HostRevenue? _revenue;
 
   List<StationPromotion> _promotions = [];
   bool _isLoadingPromotions = true;
@@ -60,6 +97,60 @@ class _HostStationScreenState extends State<HostStationScreen> {
     super.initState();
     _loadChargers();
     _loadPromotions();
+    _loadRevenue();
+  }
+
+  Future<void> _loadRevenue() async {
+    try {
+      final revenue = await _revenueController.fetchHostRevenue();
+      if (!mounted) return;
+      setState(() => _revenue = revenue);
+    } catch (_) {
+      // Figures keep showing "–".
+    }
+  }
+
+  Future<void> _openChargerForm({Charger? charger}) async {
+    final open =
+        widget.openChargerForm ??
+        (BuildContext context, Station station, Charger? charger, int count) =>
+            Navigator.of(context).push<Charger>(
+              MaterialPageRoute(
+                builder: (_) => AddChargerScreen(
+                  station: station,
+                  initialCharger: charger,
+                  existingChargerCount: count,
+                  controller: _chargerController,
+                ),
+              ),
+            );
+    final saved = await open(context, _station, charger, _chargers.length);
+    if (saved == null || !mounted) return;
+    widget.onChanged?.call();
+    await _loadChargers();
+  }
+
+  /// Flips a live charger between 'available' and 'unavailable'. The switch
+  /// moves immediately and rolls back if the update fails.
+  Future<void> _toggleChargerStatus(Charger charger, bool isActive) async {
+    final previous = charger.status;
+    setState(() {
+      charger.status = isActive ? 'available' : 'unavailable';
+      _togglingStatus.add(charger.id);
+    });
+    try {
+      await _chargerController.updateChargerStatus(
+        chargerId: charger.id,
+        status: charger.status,
+      );
+      widget.onChanged?.call();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => charger.status = previous);
+      _snack('Could not update charger status: $error');
+    } finally {
+      if (mounted) setState(() => _togglingStatus.remove(charger.id));
+    }
   }
 
   Future<void> _loadChargers() async {
@@ -216,7 +307,8 @@ class _HostStationScreenState extends State<HostStationScreen> {
       body: SafeArea(
         child: RefreshIndicator(
           color: _primary,
-          onRefresh: () => Future.wait([_loadChargers(), _loadPromotions()]),
+          onRefresh: () =>
+              Future.wait([_loadChargers(), _loadPromotions(), _loadRevenue()]),
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
@@ -361,18 +453,140 @@ class _HostStationScreenState extends State<HostStationScreen> {
         _messageCard('Could not load the chargers.', retry: _loadChargers),
       ];
     }
-    if (_chargers.isEmpty) {
-      return [_messageCard('No chargers at this station yet.')];
-    }
     return [
-      for (int i = 0; i < _chargers.length; i++) ...[
-        if (i > 0) const Padding(padding: EdgeInsets.only(top: 12)),
-        _buildChargerCard(_chargers[i]),
+      _buildAddChargerButton(),
+      const Padding(padding: EdgeInsets.only(top: 12)),
+      if (_chargers.isEmpty)
+        _messageCard('No chargers at this station yet.')
+      else ...[
+        if (_revenue != null) ...[
+          Text(
+            'Figures for ${monthLabel(_revenue!.month)}',
+            style: const TextStyle(fontSize: 13, color: _muted),
+          ),
+          const Padding(padding: EdgeInsets.only(top: 8)),
+        ],
+        for (int i = 0; i < _chargers.length; i++) ...[
+          if (i > 0) const Padding(padding: EdgeInsets.only(top: 12)),
+          _buildChargerCard(_chargers[i]),
+        ],
       ],
     ];
   }
 
+  Widget _buildAddChargerButton() {
+    return SizedBox(
+      height: 56,
+      child: ElevatedButton.icon(
+        key: const ValueKey('add-charger'),
+        onPressed: () => _openChargerForm(),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFFEAFBF3),
+          foregroundColor: _primary,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: _primary, width: 1.5),
+          ),
+        ),
+        icon: const Icon(Icons.add),
+        label: const Text(
+          'Add Charger',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+
   Widget _buildChargerCard(Charger charger) {
+    final revenue = _revenue?.forCharger(charger.id);
+    String money(double? v) => revenue == null ? '–' : formatBaht(v ?? 0);
+
+    return Container(
+      key: ValueKey('host-charger-${charger.id}'),
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildChargerHeaderRow(charger),
+          if (charger.isLive) ...[
+            const Padding(padding: EdgeInsets.only(top: 14)),
+            Row(
+              children: [
+                _metric(
+                  'SESSIONS',
+                  revenue == null ? '–' : '${revenue.sessions}',
+                ),
+                const Padding(padding: EdgeInsets.only(left: 10)),
+                _metric('GROSS', money(revenue?.gross)),
+                const Padding(padding: EdgeInsets.only(left: 10)),
+                _metric('NET (-15%)', money(revenue?.net)),
+              ],
+            ),
+          ],
+          const Padding(padding: EdgeInsets.only(top: 12)),
+          OutlinedButton.icon(
+            key: ValueKey('edit-charger-${charger.id}'),
+            onPressed: () => _openChargerForm(charger: charger),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _dark,
+              side: const BorderSide(color: Color(0xFFE5E7EB)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: const Text(
+              'Edit',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metric(String label, String value) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: _bg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: _muted,
+                letterSpacing: 0.3,
+              ),
+            ),
+            const Padding(padding: EdgeInsets.only(top: 4)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _dark,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChargerHeaderRow(Charger charger) {
     final specs = [
       charger.powerLabel,
       if (charger.chargerType.isNotEmpty) charger.chargerType,
@@ -381,51 +595,56 @@ class _HostStationScreenState extends State<HostStationScreen> {
     ].join(' · ');
     final isAvailable = charger.status == 'available';
 
-    return Container(
-      key: ValueKey('host-charger-${charger.id}'),
-      padding: const EdgeInsets.all(16),
-      decoration: _cardDecoration(),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: isAvailable
-                  ? const Color(0xFFDFF7EF)
-                  : const Color(0xFFF1F2F4),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              Icons.bolt,
-              color: isAvailable ? _primary : const Color(0xFF9CA3AF),
-            ),
+    return Row(
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: isAvailable
+                ? const Color(0xFFDFF7EF)
+                : const Color(0xFFF1F2F4),
+            borderRadius: BorderRadius.circular(12),
           ),
-          const Padding(padding: EdgeInsets.only(left: 12)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  charger.name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: _dark,
-                  ),
-                ),
-                const Padding(padding: EdgeInsets.only(top: 2)),
-                Text(
-                  specs,
-                  style: const TextStyle(fontSize: 13, color: _muted),
-                ),
-              ],
-            ),
+          child: Icon(
+            Icons.bolt,
+            color: isAvailable ? _primary : const Color(0xFF9CA3AF),
           ),
-          const Padding(padding: EdgeInsets.only(left: 8)),
+        ),
+        const Padding(padding: EdgeInsets.only(left: 12)),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                charger.name,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _dark,
+                ),
+              ),
+              const Padding(padding: EdgeInsets.only(top: 2)),
+              Text(specs, style: const TextStyle(fontSize: 13, color: _muted)),
+            ],
+          ),
+        ),
+        const Padding(padding: EdgeInsets.only(left: 8)),
+        // Live chargers get the on/off switch; pending ones show where they
+        // are in the approval flow.
+        if (charger.isLive)
+          Switch.adaptive(
+            key: ValueKey('charger-switch-${charger.id}'),
+            value: isAvailable,
+            activeThumbColor: Colors.white,
+            activeTrackColor: _primary,
+            onChanged: _togglingStatus.contains(charger.id)
+                ? null
+                : (value) => _toggleChargerStatus(charger, value),
+          )
+        else
           _statusBadge(charger.status),
-        ],
-      ),
+      ],
     );
   }
 

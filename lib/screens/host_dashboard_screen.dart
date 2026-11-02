@@ -390,8 +390,12 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
         ),
       ),
     );
-    // Reload after any way of leaving (button, swipe, system back).
-    if (changed && mounted) _refreshStations();
+    // Reload after any way of leaving (button, swipe, system back). A new
+    // charger lands in Pending, so refresh that tab too.
+    if (changed && mounted) {
+      _refreshStations();
+      _refreshPendingChargers();
+    }
   }
 
   Widget _buildAddStationButton() {
@@ -719,6 +723,17 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
                         color: _dark,
                       ),
                     ),
+                    if (charger.stationName.isNotEmpty) ...[
+                      const Padding(padding: EdgeInsets.only(top: 2)),
+                      Text(
+                        charger.stationName,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _primary,
+                        ),
+                      ),
+                    ],
                     const Padding(padding: EdgeInsets.only(top: 4)),
                     Text(
                       _cardSubtitle(charger),

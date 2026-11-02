@@ -29,7 +29,8 @@
 --     "summary": { "gross", "net", "platform_fee", "sessions",
 --                  "reservation_fee", "reservation_count" },
 --     "by_charger": [                                -- selected month
---       { "charger_id", "name", "sessions", "gross", "net" }, ...
+--       { "charger_id", "name", "station_id", "station_name",
+--         "sessions", "gross", "net" }, ...
 --     ],                                             -- every live charger of
 --                                                    -- the host (0 if none),
 --                                                    -- net desc
@@ -40,8 +41,17 @@
 --
 -- WHY SECURITY DEFINER
 --   Hosts can't read drivers' session_payments (RLS). This function joins
---   payments -> sessions -> reservations -> chargers on the server, scoped to
---   chargers.host_id = auth.uid(), and returns totals only.
+--   payments -> sessions -> reservations -> chargers -> stations on the
+--   server, scoped to stations.host_id = auth.uid() (plus legacy chargers
+--   with no station and chargers.host_id = auth.uid()), and returns totals
+--   only.
+--
+-- CHECK THAT OTHER HOSTS SEE NOTHING (SQL Editor, replace the uuids):
+--   set local role authenticated;
+--   select set_config('request.jwt.claims',
+--     '{"sub":"<some other user id>","role":"authenticated"}', true);
+--   select jsonb_array_length(public.host_revenue()->'by_charger');  -- 0
+--   reset role;
 --
 -- HOW TO RUN
 --   Run in the Supabase SQL Editor. CREATE OR REPLACE, so re-running is safe.
@@ -63,6 +73,15 @@ as $$
                                    now() at time zone 'Asia/Bangkok')) as sel_month,
       date_trunc('month', now() at time zone 'Asia/Bangkok') as cur_month
   ),
+  -- The host's chargers: owned through their station, or (legacy rows with
+  -- no station yet) through chargers.host_id. Task 9 drops the legacy branch.
+  my_chargers as (
+    select c.id, c.name, c.status, c.station_id, st.name as station_name
+    from chargers c
+    left join stations st on st.id = c.station_id
+    where st.host_id = auth.uid()
+       or (c.station_id is null and c.host_id = auth.uid())
+  ),
   paid as (
     select
       r.charger_id,
@@ -73,9 +92,8 @@ as $$
     from session_payments sp
     join charging_sessions s on s.id = sp.session_id
     join reservations r on r.id = s.reservation_id
-    join chargers c on c.id = r.charger_id
-    where c.host_id = auth.uid()
-      and sp.status = 'paid'
+    join my_chargers c on c.id = r.charger_id
+    where sp.status = 'paid'
       and s.ended_at is not null
   ),
   sel as (
@@ -87,10 +105,9 @@ as $$
     select bf.amount
     from booking_fee bf
     join reservations r on r.id = bf.reservation_id
-    join chargers c on c.id = r.charger_id
+    join my_chargers c on c.id = r.charger_id
     cross join params
-    where c.host_id = auth.uid()
-      and bf.status = 'paid'
+    where bf.status = 'paid'
       and date_trunc('month', r.start_time at time zone 'Asia/Bangkok')
           = params.sel_month
   ),
@@ -98,13 +115,14 @@ as $$
     select
       c.id as charger_id,
       c.name,
+      c.station_id,
+      c.station_name,
       count(sel.charger_id)::integer as sessions,
       coalesce(sum(sel.total_amount), 0) as gross,
       coalesce(sum(sel.host_amount), 0) as net
-    from chargers c
+    from my_chargers c
     left join sel on sel.charger_id = c.id
-    where c.host_id = auth.uid()
-    group by c.id, c.name, c.status
+    group by c.id, c.name, c.status, c.station_id, c.station_name
     -- Live chargers always; others only if they earned that month.
     having c.status in ('available', 'unavailable') or count(sel.charger_id) > 0
   ),
@@ -141,11 +159,13 @@ as $$
           jsonb_build_object(
             'charger_id', charger_id,
             'name', name,
+            'station_id', station_id,
+            'station_name', station_name,
             'sessions', sessions,
             'gross', gross,
             'net', net
           )
-          order by net desc, name
+          order by net desc, station_name, name
         ),
         '[]'::jsonb
       )

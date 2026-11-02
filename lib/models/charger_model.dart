@@ -13,6 +13,21 @@ class Charger {
   String status;
   DateTime? createdAt;
 
+  /// The station this charger belongs to (`chargers.station_id`). Empty for
+  /// legacy rows without a station.
+  String stationId;
+
+  /// The station's name, when the query embedded `stations(name)`. Empty
+  /// otherwise.
+  String stationName;
+
+  /// Approval states before a charger goes live.
+  static const Set<String> pendingStatuses = {'review', 'setup', 'rejected'};
+
+  /// Live chargers ('available' / 'unavailable') have passed device setup:
+  /// the host can toggle them, and their hardware specs are locked.
+  bool get isLive => status == 'available' || status == 'unavailable';
+
   /// Great-circle distance in metres from the user's location to this charger.
   /// Only populated by the search RPC (`search_chargers`), which returns a
   /// `distance_m` column; null for chargers loaded through other queries.
@@ -33,9 +48,18 @@ class Charger {
     this.address = '',
     this.createdAt,
     this.distanceMeters,
+    this.stationId = '',
+    this.stationName = '',
   });
 
   factory Charger.fromJson(Map<String, dynamic> json) {
+    // Embedded `stations(...)` arrives as an object (tolerate a list too).
+    final rawStation = json['stations'];
+    final station = rawStation is Map
+        ? rawStation
+        : (rawStation is List && rawStation.isNotEmpty && rawStation.first is Map
+            ? rawStation.first as Map
+            : null);
     return Charger(
       json['id'] as String,
       json['name'] as String? ?? '',
@@ -53,6 +77,8 @@ class Charger {
           ? null
           : DateTime.tryParse(json['created_at'] as String)?.toLocal(),
       distanceMeters: (json['distance_m'] as num?)?.toDouble(),
+      stationId: json['station_id'] as String? ?? '',
+      stationName: station?['name'] as String? ?? '',
     );
   }
 

@@ -335,7 +335,7 @@ class _HostRevenueTabState extends State<HostRevenueTab>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  r.name.isNotEmpty ? r.name : 'Charger',
+                  r.displayName,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
