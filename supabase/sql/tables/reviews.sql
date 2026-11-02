@@ -16,7 +16,8 @@
 -- NOTES
 --   - rating: 1-5  (1 Terrible, 2 Poor, 3 Okay, 4 Good, 5 Excellent).
 --   - comment: optional, max 500 characters.
---   - RLS (bottom of this file):
+--   - RLS (enabled in supabase/policies/rls.sql, policies in
+--     supabase/policies/policies.sql):
 --       SELECT: any signed-in user (reviews are public, e.g. shown on the
 --               charger details screen).
 --       INSERT: the owner, only when the reservation is 'completed'.
@@ -46,25 +47,3 @@ create table public.reviews (
 create trigger reviews_set_updated_at before
 update on reviews for each row
 execute function set_updated_at ();
-
--- -----------------------------------------------------------------------------
--- RLS
--- -----------------------------------------------------------------------------
-alter table public.reviews enable row level security;
-
-create policy "Signed-in users read all reviews"
-  on public.reviews for select
-  to authenticated
-  using (true);
-
-create policy "Drivers review own completed reservations"
-  on public.reviews for insert
-  to authenticated
-  with check (
-    exists (
-      select 1 from public.reservations r
-      where r.id = reviews.reservation_id
-        and r.user_id = auth.uid()
-        and r.status = 'completed'
-    )
-  );

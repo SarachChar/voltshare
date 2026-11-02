@@ -13,7 +13,7 @@ Flutter ◀── Realtime (charging_sessions, session_streams)
 | ส่วน | ที่อยู่ใน repo |
 |---|---|
 | ตาราง | `supabase/sql/tables/charging_sessions.sql`, `session_streams.sql`, `session_payments.sql` |
-| RLS + Realtime | `supabase/policies/charging_policies.sql` |
+| RLS + Realtime | `supabase/policies/rls.sql`, `supabase/policies/policies.sql` |
 | SQL functions | `supabase/sql/functions/ocpp_*.sql`, `mock_charger_active_sessions.sql`, `charging_payment_*.sql`, `trigger_mock_charger.sql` |
 | Cron | `supabase/sql/cron/mock_charger_tick.sql` |
 | Edge functions | `supabase/functions/` (`_shared/` = โค้ดร่วม) |
@@ -49,7 +49,7 @@ Dashboard → **Database → Extensions** → เปิด `pg_cron` และ `
 
 ## ขั้นที่ 3 – RLS + Realtime
 
-4. `policies/charging_policies.sql`
+4. `policies/rls.sql` แล้วตามด้วย `policies/policies.sql`
 
 เช็ค:
 ```sql

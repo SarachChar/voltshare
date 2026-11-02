@@ -18,7 +18,7 @@
 --     (charger register minus meter_start_wh), not the delta for this sample.
 --   - soc_percent is the vehicle battery state of charge (0-100).
 --   - Published to Realtime so the app receives new readings as they're
---     inserted (see supabase/policies/charging_policies.sql).
+--     inserted (see supabase/policies/policies.sql).
 -- =============================================================================
 
 create table public.session_streams (

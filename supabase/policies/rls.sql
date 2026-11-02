@@ -1,0 +1,14 @@
+alter table public.booking_fee enable row level security;
+alter table public.business_images enable row level security;
+alter table public.charger_availability enable row level security;
+alter table public.charger_businesses enable row level security;
+alter table public.charger_images enable row level security;
+alter table public.charger_promotions enable row level security;
+alter table public.chargers enable row level security;
+alter table public.charging_sessions enable row level security;
+alter table public.payment_methods enable row level security;
+alter table public.profiles enable row level security;
+alter table public.reservations enable row level security;
+alter table public.reviews enable row level security;
+alter table public.session_payments enable row level security;
+alter table public.session_streams enable row level security;
