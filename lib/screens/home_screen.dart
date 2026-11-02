@@ -4,14 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:voltshare_app/components/map_navigation.dart';
-import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/controllers/station_controller.dart';
 import 'package:voltshare_app/models/station_model.dart';
 import 'package:voltshare_app/screens/bookings_screen.dart';
 import 'package:voltshare_app/screens/profile_screen.dart';
 import 'package:voltshare_app/screens/search_screen.dart';
 import 'package:voltshare_app/screens/station_detail_screen.dart';
-import 'package:voltshare_app/services/charger_service.dart';
 import 'package:voltshare_app/services/station_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,12 +26,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const double _initialSheetSize = 0.30;
 
-  /// Still used by the Search tab (until it moves to stations in Task 4).
-  final ChargerController _controller = ChargerController(
-    ChargerSupabaseService(),
-  );
-
-  /// Drives the map: markers, the nearby list and the details popup.
+  /// Drives the map (markers, nearby list, details popup) and is shared with
+  /// the Search tab.
   final StationController _stationController = StationController(
     StationSupabaseService(),
   );
@@ -427,7 +421,10 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _navIndex,
         children: [
           _buildMapTab(),
-          SearchScreen(controller: _controller, userLocation: _userLocation),
+          SearchScreen(
+            controller: _stationController,
+            userLocation: _userLocation,
+          ),
           const BookingsScreen(),
           const ProfileScreen(),
         ],

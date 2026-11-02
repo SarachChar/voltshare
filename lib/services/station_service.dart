@@ -22,6 +22,26 @@ abstract class StationService {
     int limit,
   });
 
+  /// Distance-sorted, paginated station search via the `search_stations` RPC.
+  /// Returns up to [limit] stations starting at [offset], nearest to
+  /// ([userLat], [userLng]) first. All filters are optional:
+  ///   [query]          case-insensitive substring of the station name
+  ///   [chargerType]    'AC' | 'DC'
+  ///   [connectorType]  'CCS2' | 'Type 2' | 'CHAdeMO'
+  ///   [powerMin]/[powerMax]  power_kw range in kW, half-open [min, max)
+  /// The charger filters must all hold on the same available charger.
+  Future<List<Station>> searchStations({
+    required double userLat,
+    required double userLng,
+    String? query,
+    String? chargerType,
+    String? connectorType,
+    double? powerMin,
+    double? powerMax,
+    int limit,
+    int offset,
+  });
+
   /// The live chargers of [stationId] ('available' and 'unavailable'),
   /// available first, then by name.
   Future<List<Charger>> getStationChargers(String stationId);
@@ -72,6 +92,37 @@ class StationSupabaseService implements StationService {
         'max_lat': maxLat,
         'max_lng': maxLng,
         'page_limit': limit,
+      },
+    );
+    return Station.listFromJson(data);
+  }
+
+  @override
+  Future<List<Station>> searchStations({
+    required double userLat,
+    required double userLng,
+    String? query,
+    String? chargerType,
+    String? connectorType,
+    double? powerMin,
+    double? powerMax,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    // Blank queries go as null so the SQL skips the name filter.
+    final trimmed = query?.trim();
+    final List<dynamic> data = await _client.rpc(
+      'search_stations',
+      params: {
+        'user_lat': userLat,
+        'user_lng': userLng,
+        'search_query': (trimmed == null || trimmed.isEmpty) ? null : trimmed,
+        'charger_type_filter': chargerType,
+        'connector_type_filter': connectorType,
+        'power_min': powerMin,
+        'power_max': powerMax,
+        'page_limit': limit,
+        'page_offset': offset,
       },
     );
     return Station.listFromJson(data);

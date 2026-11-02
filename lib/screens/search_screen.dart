@@ -4,13 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import 'package:voltshare_app/controllers/charger_controller.dart';
-import 'package:voltshare_app/models/charger_model.dart';
-import 'package:voltshare_app/screens/charger_detail_screen.dart';
-import 'package:voltshare_app/services/charger_service.dart';
+import 'package:voltshare_app/controllers/station_controller.dart';
+import 'package:voltshare_app/models/station_model.dart';
+import 'package:voltshare_app/screens/station_detail_screen.dart';
+import 'package:voltshare_app/services/station_service.dart';
 
 /// A power band used by the quick filters. Maps a human label to the half-open
-/// [min, max) kW range sent to the `search_chargers` RPC.
+/// [min, max) kW range sent to the `search_stations` RPC.
 enum PowerBand {
   any('All', null, null),
   low('< 11 kW', null, 11),
@@ -24,15 +24,16 @@ enum PowerBand {
   final double? max;
 }
 
-/// Distance-sorted charger search with name search, quick filters
-/// (charger type / connector / power) and offset pagination (20 at a time,
-/// loading the next page as the user scrolls near the bottom).
+/// Distance-sorted station search with name search, quick filters
+/// (charger type / connector / power, matched on a single available charger)
+/// and offset pagination (20 at a time, loading the next page as the user
+/// scrolls near the bottom).
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key, this.controller, this.userLocation});
 
   /// Optional injected controller (useful for tests and for reusing the home
   /// screen's controller). Falls back to a default Supabase-backed controller.
-  final ChargerController? controller;
+  final StationController? controller;
 
   /// Shared device location resolved by the host (home) screen. The first
   /// query waits briefly for this to populate so it can run once against the
@@ -67,8 +68,8 @@ class _SearchScreenState extends State<SearchScreen> {
     'CHAdeMO',
   ];
 
-  late final ChargerController _controller =
-      widget.controller ?? ChargerController(ChargerSupabaseService());
+  late final StationController _controller =
+      widget.controller ?? StationController(StationSupabaseService());
 
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -84,7 +85,7 @@ class _SearchScreenState extends State<SearchScreen> {
   PowerBand _powerBand = PowerBand.any;
 
   // Paged result state.
-  final List<Charger> _chargers = [];
+  final List<Station> _stations = [];
   int _offset = 0;
   bool _hasMore = true;
   bool _isLoading = false; // first page / after a filter change
@@ -207,7 +208,7 @@ class _SearchScreenState extends State<SearchScreen> {
       final results = await _fetchPage(offset: 0);
       if (!mounted || token != _searchToken) return;
       setState(() {
-        _chargers
+        _stations
           ..clear()
           ..addAll(results);
         _offset = results.length;
@@ -238,7 +239,7 @@ class _SearchScreenState extends State<SearchScreen> {
       final results = await _fetchPage(offset: _offset);
       if (!mounted || token != _searchToken) return;
       setState(() {
-        _chargers.addAll(results);
+        _stations.addAll(results);
         _offset += results.length;
         _hasMore = results.length == _pageSize;
         _isLoadingMore = false;
@@ -253,8 +254,8 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  Future<List<Charger>> _fetchPage({required int offset}) {
-    return _controller.searchChargers(
+  Future<List<Station>> _fetchPage({required int offset}) {
+    return _controller.searchStations(
       userLat: _userLat,
       userLng: _userLng,
       query: _query.isEmpty ? null : _query,
@@ -309,7 +310,7 @@ class _SearchScreenState extends State<SearchScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Find Chargers',
+            'Find Stations',
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
@@ -341,7 +342,7 @@ class _SearchScreenState extends State<SearchScreen> {
         onChanged: _onQueryChanged,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
-          hintText: 'Search by charger name...',
+          hintText: 'Search by station name...',
           hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 15),
           prefixIcon: const Icon(Icons.search, color: _muted),
           suffixIcon: _query.isEmpty
@@ -421,15 +422,15 @@ class _SearchScreenState extends State<SearchScreen> {
       return _buildMessage(
         icon: Icons.error_outline,
         title: 'Something went wrong',
-        subtitle: 'Could not load chargers. Pull to retry.',
+        subtitle: 'Could not load stations. Pull to retry.',
         showRetry: true,
       );
     }
 
-    if (_chargers.isEmpty) {
+    if (_stations.isEmpty) {
       return _buildMessage(
         icon: Icons.search_off,
-        title: 'No chargers found',
+        title: 'No stations found',
         subtitle: 'Try adjusting your search or filters.',
       );
     }
@@ -443,12 +444,12 @@ class _SearchScreenState extends State<SearchScreen> {
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
         // One extra slot for the count header (index 0) and, when paging,
         // one for the bottom loader.
-        itemCount: _chargers.length + 1 + (_hasMore ? 1 : 0),
+        itemCount: _stations.length + 1 + (_hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == 0) return _buildCountHeader();
 
-          final chargerIndex = index - 1;
-          if (chargerIndex >= _chargers.length) {
+          final stationIndex = index - 1;
+          if (stationIndex >= _stations.length) {
             // Bottom loader slot.
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -465,14 +466,14 @@ class _SearchScreenState extends State<SearchScreen> {
             );
           }
 
-          return _buildChargerCard(_chargers[chargerIndex]);
+          return _buildStationCard(_stations[stationIndex]);
         },
       ),
     );
   }
 
   Widget _buildCountHeader() {
-    final count = _chargers.length;
+    final count = _stations.length;
     final suffix = _hasMore ? '+' : '';
     return Padding(
       padding: const EdgeInsets.only(bottom: 12, top: 4),
@@ -484,9 +485,11 @@ class _SearchScreenState extends State<SearchScreen> {
               text: '$count$suffix ',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
-            const TextSpan(
-              text: 'chargers found',
-              style: TextStyle(color: _muted),
+            TextSpan(
+              text: count == 1 && !_hasMore
+                  ? 'station found'
+                  : 'stations found',
+              style: const TextStyle(color: _muted),
             ),
           ],
         ),
@@ -494,19 +497,20 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  Widget _buildChargerCard(Charger charger) {
-    final distance = charger.distanceLabel;
+  Widget _buildStationCard(Station station) {
+    final distance = station.distanceLabel;
     final locationLine = [
-      if (charger.address.isNotEmpty) charger.address,
+      if (station.address.isNotEmpty) station.address,
       if (distance.isNotEmpty) distance,
     ].join(' · ');
 
     return GestureDetector(
+      key: ValueKey('station-card-${station.id}'),
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => ChargerDetailScreen(
-              charger: charger,
+            builder: (_) => StationDetailScreen(
+              station: station,
               controller: _controller,
             ),
           ),
@@ -530,7 +534,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 color: _primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Icon(Icons.bolt, color: _primary, size: 28),
+              child: const Icon(Icons.ev_station, color: _primary, size: 28),
             ),
             const Padding(padding: EdgeInsets.only(left: 14)),
             Expanded(
@@ -538,7 +542,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    charger.name,
+                    station.name,
                     style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w700,
@@ -567,8 +571,12 @@ class _SearchScreenState extends State<SearchScreen> {
                       ],
                     ),
                   ],
+                  if (station.connectorTypes.isNotEmpty) ...[
+                    const Padding(padding: EdgeInsets.only(top: 8)),
+                    _buildConnectorChips(station.connectorTypes),
+                  ],
                   const Padding(padding: EdgeInsets.only(top: 8)),
-                  _buildSpecLine(charger),
+                  _buildSummaryLine(station),
                 ],
               ),
             ),
@@ -578,12 +586,39 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  /// The "22 kW · Type 2 · ฿8/kWh" line, with the price in the primary colour.
-  Widget _buildSpecLine(Charger charger) {
+  /// Small pills for the station's available connector types.
+  Widget _buildConnectorChips(List<String> connectors) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final connector in connectors)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: _primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              connector,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: _primary,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// "2/3 available · up to 120 kW" with "from ฿7.50/kWh" in the primary
+  /// colour.
+  Widget _buildSummaryLine(Station station) {
     final specs = <String>[
-      charger.powerLabel,
-      if (charger.connectorType.isNotEmpty) charger.connectorType,
-    ].join('   ·   ');
+      station.availabilityLabel,
+      if (station.maxPowerLabel.isNotEmpty) station.maxPowerLabel,
+    ].join(' · ');
 
     return Row(
       children: [
@@ -597,15 +632,17 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ),
         ),
-        const Padding(padding: EdgeInsets.only(left: 10)),
-        Text(
-          '฿${charger.pricePerKwh.toStringAsFixed(0)}/kWh',
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            color: _primary,
+        if (station.priceFromLabel.isNotEmpty) ...[
+          const Padding(padding: EdgeInsets.only(left: 10)),
+          Text(
+            station.priceFromLabel,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: _primary,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

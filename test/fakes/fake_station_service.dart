@@ -43,6 +43,39 @@ class FakeStationService implements StationService {
     return stations;
   }
 
+  /// Pages returned by searchStations, by offset. Missing offsets return [].
+  Map<int, List<Station>> searchPages = const {};
+
+  /// Every searchStations call, in order.
+  final List<Map<String, Object?>> searchCalls = [];
+
+  @override
+  Future<List<Station>> searchStations({
+    required double userLat,
+    required double userLng,
+    String? query,
+    String? chargerType,
+    String? connectorType,
+    double? powerMin,
+    double? powerMax,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    searchCalls.add({
+      'userLat': userLat,
+      'userLng': userLng,
+      'query': query,
+      'chargerType': chargerType,
+      'connectorType': connectorType,
+      'powerMin': powerMin,
+      'powerMax': powerMax,
+      'limit': limit,
+      'offset': offset,
+    });
+    if (error != null) throw error!;
+    return searchPages[offset] ?? const [];
+  }
+
   @override
   Future<List<Charger>> getStationChargers(String stationId) async {
     lastChargersStationId = stationId;

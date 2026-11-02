@@ -47,6 +47,33 @@ class StationController {
     }
   }
 
+  /// Paginated station search for the Search screen; see
+  /// [StationService.searchStations]. Does not touch [stations] or [onSync]
+  /// (the Search screen keeps its own paged list and loading state).
+  Future<List<Station>> searchStations({
+    required double userLat,
+    required double userLng,
+    String? query,
+    String? chargerType,
+    String? connectorType,
+    double? powerMin,
+    double? powerMax,
+    int limit = 20,
+    int offset = 0,
+  }) {
+    return service.searchStations(
+      userLat: userLat,
+      userLng: userLng,
+      query: query,
+      chargerType: chargerType,
+      connectorType: connectorType,
+      powerMin: powerMin,
+      powerMax: powerMax,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
   /// The live chargers of [stationId], available first.
   Future<List<Charger>> fetchStationChargers(String stationId) {
     return service.getStationChargers(stationId);
