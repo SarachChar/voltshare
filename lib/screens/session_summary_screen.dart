@@ -264,10 +264,14 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
   Widget _buildHeader() {
     final session = _session!;
     final r = session.reservation;
-    final subtitle = [
-      if (r != null && r.chargerName.isNotEmpty) r.chargerName,
+    // Line 1: station. Line 2: "Charger 2 · 22 kW AC · <date>".
+    final hasStation = r != null && r.stationName.isNotEmpty;
+    final secondLine = [
+      if (r != null && hasStation) r.chargerLine,
+      if (r != null && !hasStation && r.chargerName.isNotEmpty) r.chargerName,
       _dateLabel(session.startedAt),
-    ].join(' · ');
+    ].where((p) => p.isNotEmpty).join(' · ');
+    final subtitle = hasStation ? '${r.stationName}\n$secondLine' : secondLine;
 
     return Container(
       color: _primary,

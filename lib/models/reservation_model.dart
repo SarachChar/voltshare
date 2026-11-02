@@ -27,8 +27,15 @@ class Reservation {
   /// Charger details joined in for list views (e.g. the Bookings screen).
   /// Empty / null when the query didn't join the `chargers` table.
   final String chargerName;
-  final String chargerAddress;
   final double? chargerPowerKw;
+
+  /// The charger's station, from the nested `chargers.stations` embed. Empty /
+  /// null when not joined.
+  final String stationId;
+  final String stationName;
+  final String stationAddress;
+  final double? stationLatitude;
+  final double? stationLongitude;
 
   /// Current type from the joined charger, e.g. "AC" / "DC". Empty if not
   /// joined.
@@ -68,8 +75,12 @@ class Reservation {
     this.createdAt,
     this.updatedAt,
     this.chargerName = '',
-    this.chargerAddress = '',
     this.chargerPowerKw,
+    this.stationId = '',
+    this.stationName = '',
+    this.stationAddress = '',
+    this.stationLatitude,
+    this.stationLongitude,
     this.chargerType = '',
     this.chargerConnectorType = '',
     this.chargerPricePerKwh,
@@ -84,6 +95,8 @@ class Reservation {
     // A joined charger row arrives nested under the `chargers` key (Supabase
     // names the embedded object after the related table).
     final charger = json['chargers'] as Map<String, dynamic>?;
+    // The charger's station is embedded inside it (chargers.stations).
+    final station = _embeddedOne(charger?['stations']);
     // 1-1 embeds: PostgREST returns an object, tolerate a list too.
     final session = _embeddedOne(json['charging_sessions']);
     final payment = _embeddedOne(session?['session_payments']);
@@ -106,8 +119,14 @@ class Reservation {
       createdAt: _parseDate(json['created_at']),
       updatedAt: _parseDate(json['updated_at']),
       chargerName: charger?['name'] as String? ?? '',
-      chargerAddress: charger?['address'] as String? ?? '',
       chargerPowerKw: (charger?['power_kw'] as num?)?.toDouble(),
+      stationId: station?['id'] as String? ??
+          charger?['station_id'] as String? ??
+          '',
+      stationName: station?['name'] as String? ?? '',
+      stationAddress: station?['address'] as String? ?? '',
+      stationLatitude: (station?['latitude'] as num?)?.toDouble(),
+      stationLongitude: (station?['longitude'] as num?)?.toDouble(),
       chargerType: charger?['charger_type'] as String? ?? '',
       chargerConnectorType: charger?['connector_type'] as String? ?? '',
       chargerPricePerKwh: (charger?['price_per_kwh'] as num?)?.toDouble(),
@@ -151,15 +170,32 @@ class Reservation {
     return DateTime.tryParse(value.toString())?.toLocal();
   }
 
-  /// PostgREST embed for the charger fields this model reads. Use as
-  /// `.select('*, ${Reservation.chargerJoin}')`.
+  /// PostgREST embed for the charger + station fields this model reads. Use
+  /// as `.select('*, ${Reservation.chargerJoin}')`. The station is embedded
+  /// through chargers.station_id.
   static const String chargerJoin =
-      'chargers(name, address, power_kw, charger_type, connector_type, '
-      'price_per_kwh)';
+      'chargers(name, power_kw, charger_type, connector_type, price_per_kwh, '
+      'station_id, stations(id, name, address, latitude, longitude))';
 
   /// Charger spec line, e.g. "22 kW AC".
   String get chargerSpecLabel =>
       [chargerPowerLabel, chargerType].where((p) => p.isNotEmpty).join(' ');
+
+  /// Main title for booking cards and session headers: the station name.
+  /// Falls back to the charger name, then "Charger", when the station isn't
+  /// joined.
+  String get stationTitle {
+    if (stationName.isNotEmpty) return stationName;
+    if (chargerName.isNotEmpty) return chargerName;
+    return 'Charger';
+  }
+
+  /// Second line under [stationTitle], e.g. "Charger 2 · 22 kW AC". Only the
+  /// spec when there is no station (the charger name is already the title).
+  String get chargerLine {
+    final name = stationName.isNotEmpty ? chargerName : '';
+    return [name, chargerSpecLabel].where((p) => p.isNotEmpty).join(' · ');
+  }
 
   bool get isConfirmed => status == 'confirmed';
   bool get isCompleted => status == 'completed';

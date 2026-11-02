@@ -179,17 +179,28 @@ class _SessionDetailScreenState extends State<SessionDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  r.chargerName.isNotEmpty ? r.chargerName : 'Charger',
+                  r.stationTitle,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                     color: _navy,
                   ),
                 ),
-                if (r.chargerAddress.isNotEmpty) ...[
+                if (r.chargerLine.isNotEmpty) ...[
                   const Padding(padding: EdgeInsets.only(top: 2)),
                   Text(
-                    r.chargerAddress,
+                    r.chargerLine,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _primary,
+                    ),
+                  ),
+                ],
+                if (r.stationAddress.isNotEmpty) ...[
+                  const Padding(padding: EdgeInsets.only(top: 2)),
+                  Text(
+                    r.stationAddress,
                     style: const TextStyle(fontSize: 14, color: _muted),
                   ),
                 ],

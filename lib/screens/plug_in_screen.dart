@@ -160,16 +160,29 @@ class _PlugInScreenState extends State<PlugInScreen> {
                             color: Colors.grey.shade600,
                           ),
                         ),
-                        if (reservation.chargerName.isNotEmpty) ...[
+                        if (reservation.chargerName.isNotEmpty ||
+                            reservation.stationName.isNotEmpty) ...[
                           const Padding(padding: EdgeInsets.only(top: 20)),
                           Text(
-                            '${reservation.chargerName} · '
-                            '${reservation.timeRangeLabel}',
+                            reservation.stationTitle,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
                               color: _dark,
+                            ),
+                          ),
+                          const Padding(padding: EdgeInsets.only(top: 4)),
+                          Text(
+                            [
+                              reservation.chargerLine,
+                              reservation.timeRangeLabel,
+                            ].where((p) => p.isNotEmpty).join(' · '),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade600,
                             ),
                           ),
                         ],

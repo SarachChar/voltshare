@@ -353,17 +353,28 @@ class _BookingsScreenState extends State<BookingsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                r.chargerName.isNotEmpty ? r.chargerName : 'Charger',
+                r.stationTitle,
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
                   color: _dark,
                 ),
               ),
-              if (r.chargerAddress.isNotEmpty) ...[
+              if (r.chargerLine.isNotEmpty) ...[
                 const Padding(padding: EdgeInsets.only(top: 2)),
                 Text(
-                  r.chargerAddress,
+                  r.chargerLine,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _primary,
+                  ),
+                ),
+              ],
+              if (r.stationAddress.isNotEmpty) ...[
+                const Padding(padding: EdgeInsets.only(top: 2)),
+                Text(
+                  r.stationAddress,
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                 ),
               ],
@@ -482,16 +493,11 @@ class _BookingsScreenState extends State<BookingsScreen> {
   }
 
   Widget _cardFooter(Reservation r) {
+    // Power now sits in the charger line at the top of the card, so the
+    // footer only holds the actions, right-aligned.
     return Row(
-      children: [
-        Expanded(
-          child: Text(
-            r.chargerPowerLabel,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-          ),
-        ),
-        ..._cardActions(r),
-      ],
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: _cardActions(r),
     );
   }
 

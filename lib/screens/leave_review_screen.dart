@@ -207,7 +207,6 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
     final details = [
       _r.dateLabel,
       _r.durationLabel,
-      _r.chargerSpecLabel,
     ].where((p) => p.isNotEmpty).join(' · ');
 
     return Container(
@@ -224,13 +223,24 @@ class _LeaveReviewScreenState extends State<LeaveReviewScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _r.chargerName.isNotEmpty ? _r.chargerName : 'Charger',
+                  _r.stationTitle,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                     color: _navy,
                   ),
                 ),
+                if (_r.chargerLine.isNotEmpty) ...[
+                  const Padding(padding: EdgeInsets.only(top: 4)),
+                  Text(
+                    _r.chargerLine,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _primary,
+                    ),
+                  ),
+                ],
                 if (details.isNotEmpty) ...[
                   const Padding(padding: EdgeInsets.only(top: 4)),
                   Text(
