@@ -13,9 +13,10 @@ import 'package:voltshare_app/services/review_service.dart';
 import 'package:voltshare_app/services/station_service.dart';
 
 /// Full-screen station details: photo carousel, name/address/rating, then two
-/// tabs. "Station info" lists the station's chargers (each with its own hours
-/// and a Book button), the description and the latest reviews. "Business"
-/// shows the businesses around the station and its promotions.
+/// tabs. "Business" (first, open by default) shows the businesses around the
+/// station and its promotions. "Station info" lists the station's chargers
+/// (each with its own hours and a Book button), the description and the
+/// latest reviews.
 class StationDetailScreen extends StatefulWidget {
   const StationDetailScreen({
     super.key,
@@ -276,8 +277,8 @@ class _StationDetailScreenState extends State<StationDetailScreen>
               _buildTitleSection(),
               _buildTabBar(),
               _tabController.index == 0
-                  ? _buildStationInfoTab()
-                  : _buildBusinessTab(),
+                  ? _buildBusinessTab()
+                  : _buildStationInfoTab(),
             ],
           ),
           Positioned(
@@ -546,8 +547,8 @@ class _StationDetailScreenState extends State<StationDetailScreen>
         unselectedLabelStyle:
             const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         tabs: const [
-          Tab(text: 'Station info'),
           Tab(text: 'Business'),
+          Tab(text: 'Station info'),
         ],
       ),
     );

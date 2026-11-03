@@ -68,7 +68,9 @@ void main() {
 
     expect(find.text('Find Stations'), findsOneWidget);
     expect(find.text('Station 1'), findsOneWidget);
-    expect(find.text('1 Test Rd · 100 m'), findsOneWidget);
+    // Address on its own line; distance in the bottom-left row.
+    expect(find.text('1 Test Rd'), findsOneWidget);
+    expect(find.text('100 m'), findsOneWidget);
     expect(find.text('CCS2'), findsOneWidget);
     expect(find.text('Type 2'), findsOneWidget);
     expect(find.text('2/3 available · up to 120 kW'), findsNothing);

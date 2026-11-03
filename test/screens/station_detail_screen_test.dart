@@ -70,6 +70,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    // Business is the default tab; these tests are about Station info.
+    await tester.tap(find.text('Station info'));
+    await tester.pumpAndSettle();
   }
 
   testWidgets('lists every charger of the station with its specs',

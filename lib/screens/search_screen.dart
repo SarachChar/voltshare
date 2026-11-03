@@ -66,9 +66,9 @@ class _SearchScreenState extends State<SearchScreen> {
   /// Connector chips for [chargerType]: 'All' plus the connectors that type
   /// allows (AC: Type 2; DC: CCS2, CHAdeMO). Only 'All' until a type is set.
   static List<String> _connectorOptionsFor(String chargerType) => [
-        'All',
-        ...Charger.connectorsFor(chargerType),
-      ];
+    'All',
+    ...Charger.connectorsFor(chargerType),
+  ];
 
   /// Business type chips: 'All' plus display labels (e.g. 'CO-WORKING').
   static final List<String> _businessTypeOptions = [
@@ -515,11 +515,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildStationCard(Station station) {
-    final distance = station.distanceLabel;
-    final locationLine = [
-      if (station.address.isNotEmpty) station.address,
-      if (distance.isNotEmpty) distance,
-    ].join(' · ');
+    final locationLine = station.address;
 
     return GestureDetector(
       key: ValueKey('station-card-${station.id}'),
@@ -539,59 +535,71 @@ class _SearchScreenState extends State<SearchScreen> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.grey.withValues(alpha: 0.2)),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: _primary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.ev_station, color: _primary, size: 28),
-            ),
-            const Padding(padding: EdgeInsets.only(left: 14)),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    station.name,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: _dark,
-                    ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: _primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  if (locationLine.isNotEmpty) ...[
-                    const Padding(padding: EdgeInsets.only(top: 4)),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.location_on_outlined,
-                          size: 15,
-                          color: _muted,
+                  child: const Icon(
+                    Icons.ev_station,
+                    color: _primary,
+                    size: 28,
+                  ),
+                ),
+                const Padding(padding: EdgeInsets.only(left: 14)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        station.name,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: _dark,
                         ),
-                        const Padding(padding: EdgeInsets.only(left: 2)),
-                        Expanded(
-                          child: Text(
-                            locationLine,
-                            style: const TextStyle(fontSize: 13, color: _muted),
-                          ),
+                      ),
+                      if (locationLine.isNotEmpty) ...[
+                        const Padding(padding: EdgeInsets.only(top: 4)),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.location_on_outlined,
+                              size: 15,
+                              color: _muted,
+                            ),
+                            const Padding(padding: EdgeInsets.only(left: 2)),
+                            Expanded(
+                              child: Text(
+                                locationLine,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: _muted,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ],
-                  if (station.connectorTypes.isNotEmpty) ...[
-                    const Padding(padding: EdgeInsets.only(top: 8)),
-                    _buildConnectorChips(station.connectorTypes),
-                  ],
-                  const Padding(padding: EdgeInsets.only(top: 8)),
-                  _buildSummaryLine(station),
-                ],
-              ),
+                      if (station.connectorTypes.isNotEmpty) ...[
+                        const Padding(padding: EdgeInsets.only(top: 8)),
+                        _buildConnectorChips(station.connectorTypes),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
+            const Padding(padding: EdgeInsets.only(top: 12)),
+            _buildSummaryLine(station),
           ],
         ),
       ),
@@ -624,20 +632,30 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  /// "from ฿7.50/kWh" in the primary colour, right-aligned.
+  /// Bottom row of a card: distance on the left, "from ฿7.50/kWh" in the
+  /// primary colour on the right. Either side may be missing.
   Widget _buildSummaryLine(Station station) {
-    if (station.priceFromLabel.isEmpty) return const SizedBox.shrink();
+    final distance = station.distanceLabel;
+    final price = station.priceFromLabel;
 
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Text(
-        station.priceFromLabel,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-          color: _primary,
-        ),
-      ),
+    return Row(
+      children: [
+        if (distance.isNotEmpty) ...[
+          const Icon(Icons.near_me_outlined, size: 15, color: _muted),
+          const Padding(padding: EdgeInsets.only(left: 4)),
+          Text(distance, style: const TextStyle(fontSize: 13, color: _muted)),
+        ],
+        const Spacer(),
+        if (price.isNotEmpty)
+          Text(
+            price,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: _primary,
+            ),
+          ),
+      ],
     );
   }
 
@@ -811,11 +829,13 @@ class _SearchScreenState extends State<SearchScreen> {
                                       ),
                                     )
                                   : _buildChipRow(
-                                      options:
-                                          _connectorOptionsFor(chargerType),
+                                      options: _connectorOptionsFor(
+                                        chargerType,
+                                      ),
                                       selected: connectorType,
                                       onSelected: (value) => setSheetState(
-                                          () => connectorType = value),
+                                        () => connectorType = value,
+                                      ),
                                     ),
                             ),
                             section(
