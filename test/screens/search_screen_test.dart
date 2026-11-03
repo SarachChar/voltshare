@@ -56,6 +56,7 @@ void main() {
       'connectorType': null,
       'powerMin': null,
       'powerMax': null,
+      'businessType': null,
       'limit': 20,
       'offset': 0,
     });
@@ -70,7 +71,7 @@ void main() {
     expect(find.text('1 Test Rd · 100 m'), findsOneWidget);
     expect(find.text('CCS2'), findsOneWidget);
     expect(find.text('Type 2'), findsOneWidget);
-    expect(find.text('2/3 available · up to 120 kW'), findsOneWidget);
+    expect(find.text('2/3 available · up to 120 kW'), findsNothing);
     expect(find.text('from ฿7.50/kWh'), findsOneWidget);
     expect(find.text('1 station found', findRichText: true), findsOneWidget);
   });
@@ -81,9 +82,15 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.tune));
     await tester.pumpAndSettle();
+    // Connector chips appear only after a charger type is picked.
+    expect(find.text('Select a charger type first.'), findsOneWidget);
     await tester.tap(find.text('DC'));
+    await tester.pump();
+    expect(find.text('Select a charger type first.'), findsNothing);
     await tester.tap(find.text('CCS2').last);
     await tester.tap(find.text('> 50 kW'));
+    await tester.ensureVisible(find.text('CO-WORKING'));
+    await tester.tap(find.text('CO-WORKING'));
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
 
@@ -92,6 +99,7 @@ void main() {
     expect(last['connectorType'], 'CCS2');
     expect(last['powerMin'], 50);
     expect(last['powerMax'], isNull);
+    expect(last['businessType'], 'CO_WORKING');
     expect(last['offset'], 0);
   });
 

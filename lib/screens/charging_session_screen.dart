@@ -329,14 +329,6 @@ class _ChargingSessionScreenState extends State<ChargingSessionScreen>
   }
 
   Widget _buildHeader(bool canLeave) {
-    // Line 1: station. Line 2: "Charger 2 · 22 kW AC".
-    final subtitle = _reservation.stationName.isNotEmpty
-        ? '${_reservation.stationName}\n${_reservation.chargerLine}'
-        : [
-            _reservation.chargerName,
-            _reservation.chargerSpecLabel,
-          ].where((p) => p.isNotEmpty).join(' · ');
-
     return Stack(
       alignment: Alignment.center,
       children: [
@@ -362,14 +354,6 @@ class _ChargingSessionScreenState extends State<ChargingSessionScreen>
                   color: _navy,
                 ),
               ),
-              if (subtitle.isNotEmpty) ...[
-                const Padding(padding: EdgeInsets.only(top: 4)),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 15, color: _muted),
-                ),
-              ],
               // Booked slot, so the driver knows when charging must end.
               const Padding(padding: EdgeInsets.only(top: 6)),
               Text(

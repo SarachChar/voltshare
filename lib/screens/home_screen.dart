@@ -916,8 +916,8 @@ class _HomeScreenState extends State<HomeScreen> {
             label,
             style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
           ),
-          const Spacer(),
-          Flexible(
+          const Padding(padding: EdgeInsets.only(left: 12)),
+          Expanded(
             child: Text(
               value,
               textAlign: TextAlign.right,
@@ -977,9 +977,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Subtitle for a nearby-list card, e.g. "2/3 available · CCS2, Type 2 · 0.4 km".
+  /// Subtitle for a nearby-list card, e.g. "CCS2, Type 2 · 0.4 km".
   String _stationSubtitle(Station station) {
-    final parts = <String>[station.availabilityLabel];
+    final parts = <String>[];
     if (station.connectorTypes.isNotEmpty) {
       parts.add(station.connectorTypes.join(', '));
     }

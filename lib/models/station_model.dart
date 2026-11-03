@@ -269,6 +269,24 @@ class StationBusiness {
   final String businessName;
   final String description;
 
+  /// Every `business_type` value allowed by the DB check constraint.
+  static const List<String> businessTypes = [
+    'CAFE',
+    'RESTAURANT',
+    'CO_WORKING',
+    'RETAIL',
+    'CONVENIENCE',
+    'SALON',
+    'GYM',
+    'OTHER',
+  ];
+
+  /// Display form of a `business_type` value: underscores become hyphens,
+  /// e.g. `CO_WORKING` -> `CO-WORKING`.
+  static String typeLabel(String value) => value.replaceAll('_', '-');
+
+  String get businessTypeLabel => typeLabel(businessType);
+
   const StationBusiness({
     required this.id,
     required this.stationId,

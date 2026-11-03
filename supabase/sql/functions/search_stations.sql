@@ -5,14 +5,19 @@
 -- (replaces search_chargers there).
 --
 -- HOW TO RUN
---   Paste into the Supabase SQL Editor and run once. Idempotent
---   (CREATE OR REPLACE).
+--   Paste into the Supabase SQL Editor and run once. Idempotent (DROP IF
+--   EXISTS of the old 9-argument version, then CREATE OR REPLACE). The old
+--   version must be dropped: adding a parameter creates a second overload,
+--   and PostgREST can't pick between them.
 --
 -- WHAT IT RETURNS
 --   Stations with at least one 'available' charger that matches ALL the
 --   charger filters (type / connector / power) on the SAME charger, nearest to
 --   the user first, LIMIT/OFFSET paged. Same columns as stations_in_bounds, so
 --   the app parses both with Station.fromJson.
+--
+--   With business_type_filter, the station must also have a non-deleted
+--   station_businesses row of that type.
 --
 --   The summary columns (available_count, connector_types, min_price, ...) are
 --   computed over all of the station's available chargers, not only the ones
@@ -23,11 +28,17 @@
 --   charger_type_filter     'AC' | 'DC'
 --   connector_type_filter   'CCS2' | 'Type 2' | 'CHAdeMO'
 --   power_min / power_max   power_kw half-open range [min, max)
+--   business_type_filter    station_businesses.business_type, e.g. 'CAFE'
 --   page_limit, page_offset pagination (app sends 20 / multiples of 20)
 --
 -- DISTANCE / SEARCH PATH
 --   earthdistance + cube; no `set search_path` (see stations_in_bounds.sql).
 -- =============================================================================
+
+drop function if exists search_stations(
+  double precision, double precision, text, text, text,
+  double precision, double precision, integer, integer
+);
 
 create or replace function search_stations(
   user_lat               double precision,
@@ -37,6 +48,7 @@ create or replace function search_stations(
   connector_type_filter  text               default null,
   power_min              double precision   default null,
   power_max              double precision   default null,
+  business_type_filter   text               default null,
   page_limit             integer            default 20,
   page_offset            integer            default 0
 )
@@ -112,6 +124,17 @@ as $$
         and (power_min is null or c.power_kw >= power_min)
         and (power_max is null or c.power_kw <  power_max)
     )
+    -- Business type (skipped when null). Uses station_businesses_station_idx.
+    and (
+      business_type_filter is null
+      or exists (
+        select 1
+        from station_businesses b
+        where b.station_id = s.id
+          and b.deleted_at is null
+          and b.business_type = business_type_filter
+      )
+    )
   order by distance_m asc, s.created_at desc
   limit  greatest(page_limit, 0)
   offset greatest(page_offset, 0);
@@ -119,7 +142,7 @@ $$;
 
 grant execute on function search_stations(
   double precision, double precision, text, text, text,
-  double precision, double precision, integer, integer
+  double precision, double precision, text, integer, integer
 ) to anon, authenticated;
 
 -- =============================================================================
@@ -127,11 +150,11 @@ grant execute on function search_stations(
 --
 -- 1) Nearest stations to central Bangkok:
 --   select name, available_count, connector_types, round(distance_m)::int as m
---   from search_stations(13.7460, 100.5340, null, null, null, null, null, 20, 0);
+--   from search_stations(13.7460, 100.5340, null, null, null, null, null, null, 20, 0);
 --
 -- 2) DC + CCS2 + >= 50 kW:
 --   select name, connector_types, max_power_kw
---   from search_stations(13.7460, 100.5340, null, 'DC', 'CCS2', 50, null, 20, 0);
+--   from search_stations(13.7460, 100.5340, null, 'DC', 'CCS2', 50, null, null, 20, 0);
 --
 -- 3) Same-charger rule. Stations that have an available AC charger and an
 --    available CHAdeMO charger, but no single available AC + CHAdeMO charger
@@ -150,6 +173,6 @@ grant execute on function search_stations(
 --   select
 --     (select count(*) from candidates) as candidates,
 --     (select count(*) from search_stations(13.7460, 100.5340, null, 'AC', 'CHAdeMO',
---                                           null, null, 1000, 0) r
+--                                           null, null, null, 1000, 0) r
 --      where r.id in (select id from candidates)) as leaked;
 -- =============================================================================

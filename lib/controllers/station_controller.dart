@@ -59,6 +59,7 @@ class StationController {
     String? connectorType,
     double? powerMin,
     double? powerMax,
+    String? businessType,
     int limit = 20,
     int offset = 0,
   }) {
@@ -70,6 +71,7 @@ class StationController {
       connectorType: connectorType,
       powerMin: powerMin,
       powerMax: powerMax,
+      businessType: businessType,
       limit: limit,
       offset: offset,
     );

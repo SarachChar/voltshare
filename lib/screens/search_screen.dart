@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:voltshare_app/controllers/station_controller.dart';
+import 'package:voltshare_app/models/charger_model.dart';
 import 'package:voltshare_app/models/station_model.dart';
 import 'package:voltshare_app/screens/station_detail_screen.dart';
 import 'package:voltshare_app/services/station_service.dart';
@@ -61,11 +62,18 @@ class _SearchScreenState extends State<SearchScreen> {
 
   /// Allowed filter values. 'All' (index 0) means "no filter".
   static const List<String> _chargerTypes = ['All', 'AC', 'DC'];
-  static const List<String> _connectorTypes = [
+
+  /// Connector chips for [chargerType]: 'All' plus the connectors that type
+  /// allows (AC: Type 2; DC: CCS2, CHAdeMO). Only 'All' until a type is set.
+  static List<String> _connectorOptionsFor(String chargerType) => [
+        'All',
+        ...Charger.connectorsFor(chargerType),
+      ];
+
+  /// Business type chips: 'All' plus display labels (e.g. 'CO-WORKING').
+  static final List<String> _businessTypeOptions = [
     'All',
-    'Type 2',
-    'CCS2',
-    'CHAdeMO',
+    ...StationBusiness.businessTypes.map(StationBusiness.typeLabel),
   ];
 
   late final StationController _controller =
@@ -83,6 +91,9 @@ class _SearchScreenState extends State<SearchScreen> {
   String _chargerType = 'All';
   String _connectorType = 'All';
   PowerBand _powerBand = PowerBand.any;
+
+  /// Display label from [_businessTypeOptions]; 'All' = no filter.
+  String _businessType = 'All';
 
   // Paged result state.
   final List<Station> _stations = [];
@@ -143,10 +154,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     listenable.addListener(listener);
     try {
-      await completer.future.timeout(
-        _locationWaitTimeout,
-        onTimeout: () {},
-      );
+      await completer.future.timeout(_locationWaitTimeout, onTimeout: () {});
     } finally {
       listenable.removeListener(listener);
     }
@@ -263,6 +271,7 @@ class _SearchScreenState extends State<SearchScreen> {
       connectorType: _connectorType == 'All' ? null : _connectorType,
       powerMin: _powerBand.min,
       powerMax: _powerBand.max,
+      businessType: _businessTypeValue(_businessType),
       limit: _pageSize,
       offset: offset,
     );
@@ -275,7 +284,17 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_chargerType != 'All') count++;
     if (_connectorType != 'All') count++;
     if (_powerBand != PowerBand.any) count++;
+    if (_businessType != 'All') count++;
     return count;
+  }
+
+  /// Chip label back to the DB value ('CO-WORKING' -> 'CO_WORKING');
+  /// null for 'All'.
+  static String? _businessTypeValue(String label) {
+    if (label == 'All') return null;
+    return StationBusiness.businessTypes.firstWhere(
+      (value) => StationBusiness.typeLabel(value) == label,
+    );
   }
 
   @override
@@ -413,9 +432,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildResults() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: _primary),
-      );
+      return const Center(child: CircularProgressIndicator(color: _primary));
     }
 
     if (_hasError) {
@@ -509,10 +526,8 @@ class _SearchScreenState extends State<SearchScreen> {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => StationDetailScreen(
-              station: station,
-              controller: _controller,
-            ),
+            builder: (_) =>
+                StationDetailScreen(station: station, controller: _controller),
           ),
         );
       },
@@ -562,10 +577,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         Expanded(
                           child: Text(
                             locationLine,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: _muted,
-                            ),
+                            style: const TextStyle(fontSize: 13, color: _muted),
                           ),
                         ),
                       ],
@@ -612,38 +624,20 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
-  /// "2/3 available · up to 120 kW" with "from ฿7.50/kWh" in the primary
-  /// colour.
+  /// "from ฿7.50/kWh" in the primary colour, right-aligned.
   Widget _buildSummaryLine(Station station) {
-    final specs = <String>[
-      station.availabilityLabel,
-      if (station.maxPowerLabel.isNotEmpty) station.maxPowerLabel,
-    ].join(' · ');
+    if (station.priceFromLabel.isEmpty) return const SizedBox.shrink();
 
-    return Row(
-      children: [
-        Flexible(
-          child: Text(
-            specs,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _dark,
-            ),
-          ),
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Text(
+        station.priceFromLabel,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: _primary,
         ),
-        if (station.priceFromLabel.isNotEmpty) ...[
-          const Padding(padding: EdgeInsets.only(left: 10)),
-          Text(
-            station.priceFromLabel,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _primary,
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 
@@ -714,6 +708,7 @@ class _SearchScreenState extends State<SearchScreen> {
     var chargerType = _chargerType;
     var connectorType = _connectorType;
     var powerBand = _powerBand;
+    var businessType = _businessType;
 
     final applied = await showModalBottomSheet<bool>(
       context: context,
@@ -769,6 +764,7 @@ class _SearchScreenState extends State<SearchScreen> {
                               chargerType = 'All';
                               connectorType = 'All';
                               powerBand = PowerBand.any;
+                              businessType = 'All';
                             });
                           },
                           child: const Text(
@@ -782,35 +778,73 @@ class _SearchScreenState extends State<SearchScreen> {
                       ],
                     ),
                     const Padding(padding: EdgeInsets.only(top: 12)),
-                    section(
-                      'CHARGER TYPE',
-                      _buildChipRow(
-                        options: _chargerTypes,
-                        selected: chargerType,
-                        onSelected: (value) =>
-                            setSheetState(() => chargerType = value),
-                      ),
-                    ),
-                    section(
-                      'CONNECTOR',
-                      _buildChipRow(
-                        options: _connectorTypes,
-                        selected: connectorType,
-                        onSelected: (value) =>
-                            setSheetState(() => connectorType = value),
-                      ),
-                    ),
-                    section(
-                      'POWER',
-                      _buildChipRow(
-                        options: PowerBand.values.map((b) => b.label).toList(),
-                        selected: powerBand.label,
-                        onSelected: (label) {
-                          setSheetState(() {
-                            powerBand = PowerBand.values
-                                .firstWhere((b) => b.label == label);
-                          });
-                        },
+                    // Scrolls when the sections don't fit (short screens).
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            section(
+                              'CHARGER TYPE',
+                              _buildChipRow(
+                                options: _chargerTypes,
+                                selected: chargerType,
+                                onSelected: (value) => setSheetState(() {
+                                  chargerType = value;
+                                  // Drop a connector the new type doesn't
+                                  // allow.
+                                  if (!_connectorOptionsFor(value)
+                                      .contains(connectorType)) {
+                                    connectorType = 'All';
+                                  }
+                                }),
+                              ),
+                            ),
+                            section(
+                              'CONNECTOR',
+                              chargerType == 'All'
+                                  ? Text(
+                                      'Select a charger type first.',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    )
+                                  : _buildChipRow(
+                                      options:
+                                          _connectorOptionsFor(chargerType),
+                                      selected: connectorType,
+                                      onSelected: (value) => setSheetState(
+                                          () => connectorType = value),
+                                    ),
+                            ),
+                            section(
+                              'POWER',
+                              _buildChipRow(
+                                options: PowerBand.values
+                                    .map((b) => b.label)
+                                    .toList(),
+                                selected: powerBand.label,
+                                onSelected: (label) {
+                                  setSheetState(() {
+                                    powerBand = PowerBand.values.firstWhere(
+                                      (b) => b.label == label,
+                                    );
+                                  });
+                                },
+                              ),
+                            ),
+                            section(
+                              'BUSINESS',
+                              _buildChipRow(
+                                options: _businessTypeOptions,
+                                selected: businessType,
+                                onSelected: (value) =>
+                                    setSheetState(() => businessType = value),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     Container(
@@ -848,6 +882,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _chargerType = chargerType;
         _connectorType = connectorType;
         _powerBand = powerBand;
+        _businessType = businessType;
       });
       _runSearch(reset: true);
     }

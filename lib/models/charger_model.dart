@@ -25,6 +25,17 @@ class Charger {
   /// the host can toggle them, and their hardware specs are locked.
   bool get isLive => status == 'available' || status == 'unavailable';
 
+  /// Connectors allowed for each current type. Used by the host form and the
+  /// search filter so a connector can only be picked after the type.
+  static const Map<String, List<String>> connectorsByChargerType = {
+    'AC': ['Type 2'],
+    'DC': ['CCS2', 'CHAdeMO'],
+  };
+
+  /// Connectors for [chargerType]; empty for an unknown type.
+  static List<String> connectorsFor(String chargerType) =>
+      connectorsByChargerType[chargerType] ?? const [];
+
   Charger(
     this.id,
     this.name,

@@ -30,6 +30,7 @@ abstract class StationService {
   ///   [chargerType]    'AC' | 'DC'
   ///   [connectorType]  'CCS2' | 'Type 2' | 'CHAdeMO'
   ///   [powerMin]/[powerMax]  power_kw range in kW, half-open [min, max)
+  ///   [businessType]   station_businesses.business_type, e.g. 'CAFE'
   /// The charger filters must all hold on the same available charger.
   Future<List<Station>> searchStations({
     required double userLat,
@@ -39,6 +40,7 @@ abstract class StationService {
     String? connectorType,
     double? powerMin,
     double? powerMax,
+    String? businessType,
     int limit,
     int offset,
   });
@@ -192,6 +194,7 @@ class StationSupabaseService implements StationService {
     String? connectorType,
     double? powerMin,
     double? powerMax,
+    String? businessType,
     int limit = 20,
     int offset = 0,
   }) async {
@@ -207,6 +210,7 @@ class StationSupabaseService implements StationService {
         'connector_type_filter': connectorType,
         'power_min': powerMin,
         'power_max': powerMax,
+        'business_type_filter': businessType,
         'page_limit': limit,
         'page_offset': offset,
       },

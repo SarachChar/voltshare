@@ -81,6 +81,29 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
   static const List<String> _chargerTypes = ['AC', 'DC'];
   static const List<String> _connectorTypes = ['Type 2', 'CCS2', 'CHAdeMO'];
 
+  /// Connectors allowed for the selected charger type (AC: Type 2;
+  /// DC: CCS2, CHAdeMO). A live charger saved before this rule keeps showing
+  /// its own connector, since its specs are locked anyway.
+  List<String> get _connectorOptions {
+    final options = Charger.connectorsFor(_chargerType);
+    if (_specsLocked && !options.contains(_connectorType)) {
+      return [...options, _connectorType];
+    }
+    return options;
+  }
+
+  /// Picks the charger type and, if the current connector doesn't fit it,
+  /// switches to the type's first connector.
+  void _selectChargerType(String type) {
+    setState(() {
+      _chargerType = type;
+      final allowed = Charger.connectorsFor(type);
+      if (!allowed.contains(_connectorType) && allowed.isNotEmpty) {
+        _connectorType = allowed.first;
+      }
+    });
+  }
+
   late final ChargerController _controller =
       widget.controller ?? ChargerController(ChargerSupabaseService());
 
@@ -131,6 +154,14 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
       }
       if (_connectorTypes.contains(charger.connectorType)) {
         _connectorType = charger.connectorType;
+      }
+      // An editable charger saved with a connector that doesn't fit its type
+      // (before the AC/DC rule) moves to the type's first connector.
+      final allowed = Charger.connectorsFor(_chargerType);
+      if (!_specsLocked &&
+          !allowed.contains(_connectorType) &&
+          allowed.isNotEmpty) {
+        _connectorType = allowed.first;
       }
       _loadExistingHours(charger.id);
     }
@@ -513,13 +544,13 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         _buildChoiceChips(
           options: _chargerTypes,
           selected: _chargerType,
-          onSelected: (value) => setState(() => _chargerType = value),
+          onSelected: _selectChargerType,
         ),
         const Padding(padding: EdgeInsets.only(top: 20)),
         _fieldLabel('CONNECTOR TYPE'),
         const Padding(padding: EdgeInsets.only(top: 8)),
         _buildChoiceChips(
-          options: _connectorTypes,
+          options: _connectorOptions,
           selected: _connectorType,
           onSelected: (value) => setState(() => _connectorType = value),
           assetForOption: _connectorAsset,

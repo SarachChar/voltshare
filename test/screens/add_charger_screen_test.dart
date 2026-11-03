@@ -144,6 +144,7 @@ void main() {
     await pump(tester);
 
     await tester.tap(find.text('DC'));
+    await tester.pump();
     await tester.tap(find.text('CCS2'));
     await tester.enterText(find.byKey(const ValueKey('charger-power')), '60');
     await tester.pumpAndSettle();
@@ -206,7 +207,8 @@ void main() {
 
     final update = service.updates.single;
     expect(update['chargerType'], 'DC');
-    expect(update['connectorType'], 'Type 2');
+    // Type 2 isn't a DC connector, so switching to DC picks CCS2.
+    expect(update['connectorType'], 'CCS2');
     expect(update['powerKw'], 7.4);
     expect(update['name'], 'Charger 2'); // blank field keeps the old name
   });

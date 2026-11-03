@@ -60,6 +60,7 @@ class FakeStationService implements StationService {
     String? connectorType,
     double? powerMin,
     double? powerMax,
+    String? businessType,
     int limit = 20,
     int offset = 0,
   }) async {
@@ -71,6 +72,7 @@ class FakeStationService implements StationService {
       'connectorType': connectorType,
       'powerMin': powerMin,
       'powerMax': powerMax,
+      'businessType': businessType,
       'limit': limit,
       'offset': offset,
     });

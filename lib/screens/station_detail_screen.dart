@@ -1150,7 +1150,7 @@ class _StationDetailScreenState extends State<StationDetailScreen>
                     if (business.businessType.isNotEmpty) ...[
                       const Padding(padding: EdgeInsets.only(top: 2)),
                       Text(
-                        business.businessType,
+                        business.businessTypeLabel,
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
