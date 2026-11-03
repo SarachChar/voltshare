@@ -66,16 +66,41 @@
 
 ### Refund (charger unavailable)
 
-- **Edge function `refund-booking-fee`:** request `{ reservationId }` + user JWT → สร้าง `mock_refund_...` → เรียก SQL `refund_booking_fee`
-- **SQL `refund_booking_fee(p_reservation_id, p_user_id, p_refund_transaction_id)`** (lock reservation `for update`):
+- **แอป:** อ่าน `booking_fee.transaction_id` (charge id) + `amount` ของ reservation ก่อน (RLS) ไม่มีแถว / ไม่มี charge id → error `resource_missing` (ไม่เรียก function)
+- **Edge function `refund-booking-fee`:** เลียนแบบ Stripe Refund ห่อด้วย `{ success, data }` ยอดเป็น **สตางค์** คืนเต็มจำนวนเท่านั้น
+  - Request + user JWT:
+    ```json
+    { "charge": "ch_...", "amount": 5000, "reason": "requested_by_customer",
+      "metadata": { "reservation_id": "<uuid>" } }
+    ```
+    `amount` ไม่ส่งได้ (= คืนเต็ม), `reason` ต้องเป็น `duplicate` / `fraudulent` / `requested_by_customer`
+  - ทำอะไร: validate → เช็ค reservation มีอยู่ + เป็นเจ้าของ → หา `booking_fee` จาก `transaction_id = charge` ต้องเป็นของ reservation นี้ → `amount` ต้องเท่ากับ `booking_fee.amount × 100` → หน่วง 600ms → สร้าง `re_...` → เรียก SQL `refund_booking_fee`
+  - สำเร็จ → `{ id: "re_...", object: "refund", amount, charge, created, currency: "thb", reason, status: "succeeded", failure_reason: null, metadata }`
+  - Errors:
 
-  | เช็ค | error_code |
-  |---|---|
-  | ไม่มี reservation | `RESERVATION_NOT_FOUND` |
-  | ไม่ใช่เจ้าของ | `NOT_OWNER` |
-  | ไม่ใช่ `confirmed` หรือเริ่มชาร์จแล้ว | `RESERVATION_NOT_ACTIVE` |
-  | `chargers.mock_error_code` เป็น null (charger ปกติ) | `CHARGER_AVAILABLE` |
-  | คืนเงินไปแล้ว | `ALREADY_REFUNDED` |
+    | status | code (param) | กรณี |
+    |---|---|---|
+    | 400 | `parameter_missing` / `parameter_invalid_integer` / `parameter_invalid_string` | body ผิด |
+    | 400 | `charge_mismatch` (`charge`) | charge ไม่ใช่ของ reservation นี้ |
+    | 401 | `authentication_error` (type) | ไม่ได้ login |
+    | 403 | `null` (`metadata.reservation_id`) | ไม่ใช่เจ้าของ |
+    | 404 | `resource_missing` (`charge` / `metadata.reservation_id`) | ไม่พบ |
+    | 409 | `charge_already_refunded` (`charge`) | คืนเงินไปแล้ว |
+    | 409 | `reservation_not_active` | ไม่ใช่ `confirmed` หรือเริ่มชาร์จแล้ว |
+    | 409 | `charger_available` | charger ปกติ |
+    | 409 | `amount_mismatch` (`amount`) | ยอดไม่เท่าค่าจอง |
+    | 500 | `api_error` (type) | DB error |
+
+    `charge_mismatch`, `reservation_not_active`, `charger_available`, `amount_mismatch` ไม่ใช่ code ของ Stripe
+- **SQL `refund_booking_fee(p_reservation_id, p_user_id, p_refund_transaction_id)`** (lock reservation `for update`, ไม่ได้แก้):
+
+  | เช็ค | error_code | → Stripe code |
+  |---|---|---|
+  | ไม่มี reservation | `RESERVATION_NOT_FOUND` | `resource_missing` |
+  | ไม่ใช่เจ้าของ | `NOT_OWNER` | `null` (403) |
+  | ไม่ใช่ `confirmed` หรือเริ่มชาร์จแล้ว | `RESERVATION_NOT_ACTIVE` | `reservation_not_active` |
+  | `chargers.mock_error_code` เป็น null (charger ปกติ) | `CHARGER_AVAILABLE` | `charger_available` |
+  | คืนเงินไปแล้ว | `ALREADY_REFUNDED` | `charge_already_refunded` |
 
   ผ่าน → `booking_fee`: `refunded` + `refunded_at` + `refund_transaction_id`, `reservations`: `cancelled`
 - แอปเปิดหน้า **Charger Unavailable** (เหตุผล + ยอดที่คืน + ปุ่ม Done กลับ Bookings) การ์ดใน Bookings มีป้าย **Refunded**
@@ -337,26 +362,46 @@ sequenceDiagram
     participant P as pay-charging-session
     participant Prep as charging_payment_prepare
     participant Fin as charging_payment_finish
-    App->>P: POST { sessionId, paymentMethodId } + user JWT
+    App->>P: POST PaymentIntent-style body + user JWT
     P->>Prep: rpc(session, user, card)
     Prep-->>P: { payment_id, amount, card_last4 }
-    P->>P: mock charge (หน่วง 600ms, เลขท้าย 0000 = ปฏิเสธ)
-    P->>Fin: rpc(payment_id, card, success, txn_id)
+    P->>P: เทียบยอด (สตางค์) + mock charge (หน่วง 600ms, เลขท้าย 0000 = ปฏิเสธ)
+    P->>Fin: rpc(payment_id, card, success, ch_id)
     Fin-->>P: { status: paid | failed }
-    P-->>App: success / PAYMENT_DECLINED
+    P-->>App: payment_intent succeeded / card_error
 ```
 
 ### Edge function: `pay-charging-session`
 
 - **ใครเรียก:** แอป ตอนกด Pay ในหน้า Session Summary (`ChargingSessionService.payForSession`)
 - **Auth:** JWT ของ user → `getUserId()`
+- **รูปแบบ:** เลียนแบบ Stripe PaymentIntent ห่อด้วย `{ success, data }` ยอดเงินเป็น **สตางค์** (79.84 บาท = `7984`)
+- **Request:**
+  ```json
+  { "amount": 7984, "currency": "thb", "payment_method": "<paymentMethodId>",
+    "description": "charging session #<sessionId>", "receipt_email": "driver@mail.com",
+    "metadata": { "sessionId": "<sessionId>" } }
+  ```
 - **ทำอะไร:**
-  1. อ่าน `sessionId`, `paymentMethodId`
+  1. validate body (`amount` จำนวนเต็ม ≥ 0, `currency` = `thb`, มี `payment_method`, `metadata.sessionId`)
   2. `charging_payment_prepare` → ได้ยอดเงิน + เลขท้ายบัตร (**ยอดมาจากบิลใน DB ไม่ใช่จากแอป**)
-  3. **mock ตัดบัตร** – หน่วง 600ms, เลขท้าย `0000` = ปฏิเสธ, อื่นๆ = สำเร็จ + สร้าง `mock_txn_...`
-  4. `charging_payment_finish` บันทึกผล
-  5. สำเร็จ → `{ status: "paid", paymentId, totalAmount, transactionId, paidAt }`
-     ปฏิเสธ → 402 `PAYMENT_DECLINED` (บิลเป็น `failed` แอปให้ลองใหม่ / เปลี่ยนบัตร)
+  3. `amount` ต้องเท่ากับ `round(บิล × 100)` ไม่งั้น `amount_mismatch`
+  4. **mock ตัดบัตร** – หน่วง 600ms, เลขท้าย `0000` = ปฏิเสธ, อื่นๆ = สำเร็จ สร้าง charge id `ch_...` ทั้งสองกรณี
+  5. `charging_payment_finish` บันทึกผล + `ch_...` ลง `transaction_id`
+  6. สำเร็จ → `{ id: "pi_...", object: "payment_intent", amount, currency, status: "succeeded", created, payment_method, latest_charge: "ch_...", description, metadata: { sessionId, paymentId } }` (`pi_...` ไม่ได้เก็บ, ไม่ส่ง `receipt_email` กลับ)
+     ปฏิเสธ → 402 `{ type: "card_error", code: "card_declined", decline_code: "insufficient_funds", message, param: null, charge: "ch_..." }` (บิลเป็น `failed` แอปให้ลองใหม่ / เปลี่ยนบัตร)
+- **Errors:**
+
+  | status | type | code (param) |
+  |---|---|---|
+  | 400 | `invalid_request_error` | `parameter_missing` / `parameter_invalid_integer` / `parameter_invalid_string` |
+  | 401 | `authentication_error` | `null` |
+  | 402 | `card_error` | `card_declined` |
+  | 403 | `invalid_request_error` | `null` (`metadata.sessionId`) – ไม่ใช่เจ้าของ |
+  | 404 | `invalid_request_error` | `resource_missing` (`metadata.sessionId` / `payment_method`) |
+  | 409 | `invalid_request_error` | `payment_intent_unexpected_state` – จ่ายแล้ว |
+  | 409 | `invalid_request_error` | `amount_mismatch` (`amount`) – ไม่ใช่ code ของ Stripe |
+  | 500 | `api_error` | `null` |
 
 ### SQL function: `charging_payment_prepare(p_session_id, p_user_id, p_payment_method_id)`
 
@@ -374,7 +419,7 @@ sequenceDiagram
 
 - `update session_payments ... where status <> 'paid'`
   - สำเร็จ → `paid`, `transaction_id`, `paid_at`, `payment_method_id`
-  - ไม่สำเร็จ → `failed`, `payment_method_id`
+  - ไม่สำเร็จ → `failed`, `payment_method_id`, `transaction_id` (charge id ที่ถูกปฏิเสธ)
 - ไม่มีแถวถูกอัพเดท (จ่ายไปแล้ว) → `ALREADY_PAID` – ไม่มีทางเปลี่ยน `paid` กลับเป็นอย่างอื่น
 
 ---

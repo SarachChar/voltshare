@@ -2,6 +2,9 @@
 -- charging_payment_finish
 -- -----------------------------------------------------------------------------
 --   Records the outcome of the card charge. Never downgrades a 'paid' row.
+--   transaction_id keeps the charge id ("ch_...") of the latest attempt,
+--   declined or not, so a 'failed' row points at the declined charge and a
+--   'paid' row at the successful one.
 --
 -- HOW TO RUN
 --   Run in the Supabase SQL Editor AFTER the charging tables
@@ -34,7 +37,7 @@ begin
   update session_payments
   set status = case when p_success then 'paid' else 'failed' end,
       payment_method_id = p_payment_method_id,
-      transaction_id = case when p_success then p_transaction_id else transaction_id end,
+      transaction_id = coalesce(p_transaction_id, transaction_id),
       paid_at = case when p_success then now() else paid_at end
   where id = p_payment_id
     and status <> 'paid'

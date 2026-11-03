@@ -26,7 +26,9 @@
 -- NOTES
 --   - status: 'unpaid' | 'paid' | 'failed'. 'failed' means the last attempt was
 --     declined; the driver can retry (possibly with another card).
---   - transaction_id is the id returned by the mock card charge.
+--   - transaction_id is the Stripe-style charge id ("ch_...") of the latest
+--     mock card charge: the successful one when 'paid', the declined one
+--     when 'failed'.
 -- =============================================================================
 
 create table public.session_payments (

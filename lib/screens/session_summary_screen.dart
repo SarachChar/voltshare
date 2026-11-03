@@ -156,7 +156,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
     } on ChargingException catch (e) {
       if (!mounted) return;
       setState(() => _isPaying = false);
-      if (e.code == 'ALREADY_PAID') {
+      if (e.code == 'payment_intent_unexpected_state') {
         _goToComplete();
         return;
       }
@@ -171,7 +171,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       );
       if (!mounted) return;
       // The bill may have changed: reload it before the next attempt.
-      if (e.code == 'AMOUNT_MISMATCH') {
+      if (e.code == 'amount_mismatch') {
         await _load();
       } else {
         await _loadCards();

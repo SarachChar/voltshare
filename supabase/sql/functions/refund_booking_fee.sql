@@ -17,7 +17,8 @@
 --
 -- ON SUCCESS (one transaction, reservation row locked FOR UPDATE)
 --   - booking_fee: status 'refunded', refunded_at, refund_transaction_id
---     (transaction_id keeps the original payment's id)
+--     (Stripe-style refund id "re_..." from the edge function;
+--     transaction_id keeps the original charge id "ch_...")
 --   - reservations: status 'cancelled'
 --   A reservation without a booking_fee row is still cancelled (amount 0).
 --

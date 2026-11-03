@@ -6,18 +6,123 @@ import 'package:voltshare_app/models/session_payment_model.dart';
 import 'package:voltshare_app/models/session_stream_model.dart';
 
 /// Error returned by a charging edge function, e.g. errorCode "TOO_EARLY".
+///
+/// `pay-charging-session` returns Stripe-style errors instead: then [code] is
+/// the Stripe code (e.g. "card_declined", "amount_mismatch") and [type],
+/// [declineCode], [param] and [charge] carry the rest of the error object.
 class ChargingException implements Exception {
   final String code;
   final String message;
 
-  ChargingException(this.code, this.message);
+  /// Stripe error type, e.g. "card_error" (payment errors only).
+  final String? type;
+
+  /// Stripe decline_code, e.g. "insufficient_funds".
+  final String? declineCode;
+
+  /// Request field the error relates to, e.g. "payment_method".
+  final String? param;
+
+  /// Charge id ("ch_...") of a declined card charge.
+  final String? charge;
+
+  ChargingException(
+    this.code,
+    this.message, {
+    this.type,
+    this.declineCode,
+    this.param,
+    this.charge,
+  });
 
   @override
   String toString() => 'ChargingException($code): $message';
 
   /// Friendly text for the app's error popups.
+  ///
+  /// Sources of the codes handled here:
+  ///   [Pay]    pay-charging-session  (Stripe-style, Session Summary → Pay)
+  ///   [Refund] refund-booking-fee    (Stripe-style, Plug In → charger
+  ///                                   unavailable)
+  ///   [OCPP]   ocpp-status / ocpp-remote-start / ocpp-remote-stop
+  ///            (old { errorCode, error } format)
+  ///
+  /// pay-booking-fee (paying the booking fee when reserving) is NOT handled
+  /// here; its messages are in PaymentResult.failureMessage
+  /// (payment_result_model.dart).
   String get userMessage {
+    // ---- Stripe-style errors: Pay + Refund --------------------------------
+
+    // [Pay] card ending in 0000 (decline_code of a card_error).
+    if (declineCode == 'insufficient_funds') {
+      return 'Payment declined: insufficient funds. Try another card.';
+    }
     switch (code) {
+      // [Pay] card declined without a more specific decline_code.
+      case 'card_declined':
+        return 'Payment declined. Try another card.';
+
+      // [Pay] + [Refund] something wasn't found; param says what.
+      case 'resource_missing':
+        switch (param) {
+          // [Pay] the chosen card was deleted / isn't the driver's.
+          case 'payment_method':
+            return 'That card is no longer available. Please choose another.';
+          // [Refund] no booking_fee row / charge id for this booking (also
+          // thrown by the app itself before calling the function).
+          case 'charge':
+            return 'No booking fee payment was found for this booking.';
+          // [Refund] reservation not found.
+          case 'metadata.reservation_id':
+            return 'This booking could not be found.';
+          // [Pay] metadata.sessionId: session or its bill not found.
+          default:
+            return 'This charging session could not be found.';
+        }
+
+      // [Pay] amount != the session bill (screen reloads the bill).
+      // [Refund] amount != the full booking fee.
+      case 'amount_mismatch':
+        return 'The amount has changed. Please review and try again.';
+
+      // [Pay] bill already paid (screen treats it as success).
+      case 'payment_intent_unexpected_state':
+        return 'This charging session has already been paid.';
+
+      // [Refund] booking fee already refunded.
+      case 'charge_already_refunded':
+        return 'This booking fee has already been refunded.';
+
+      // [Refund] the charge id belongs to another reservation.
+      case 'charge_mismatch':
+        return 'This payment doesn\'t match the booking. Please try again.';
+
+      // [Refund] booking isn't 'confirmed' or charging already started.
+      case 'reservation_not_active':
+        return 'This booking can no longer be refunded.';
+
+      // [Refund] charger is fine, so no refund (server re-check).
+      case 'charger_available':
+        return 'The charger is available, so the booking fee is not '
+            'refundable.';
+    }
+
+    // [Pay] + [Refund] fallbacks by Stripe error type when the code above
+    // didn't match (e.g. 401, 403 NOT_OWNER with code null, 400 parameter_*,
+    // 500). Note: the wording says "Payment" for refunds too.
+    // api_connection_error (no response) falls through to NETWORK_ERROR.
+    switch (type) {
+      case 'authentication_error':
+        return 'Please sign in again and retry.';
+      case 'invalid_request_error':
+        return 'Payment could not be processed. Please try again.';
+      case 'api_error':
+        return 'Payment failed. Please try again or use another card.';
+    }
+
+    // ---- Old { errorCode, error } format: OCPP functions -------------------
+    switch (code) {
+      // [OCPP] ocpp-remote-start
       case 'RESERVATION_CANCELLED':
         return 'This booking was cancelled because charging wasn\'t started '
             'within 15 minutes of the booked start time. The booking fee is '
@@ -34,8 +139,14 @@ class ChargingException implements Exception {
       case 'RESERVATION_NOT_ACTIVE':
       case 'SESSION_ALREADY_STARTED':
         return 'Charging has already been started for this booking.';
+
+      // [OCPP] ocpp-remote-stop
       case 'NO_ACTIVE_TRANSACTION':
         return 'This charging session has already ended.';
+
+      // Legacy (pre-Stripe) Pay / Refund codes. Currently unused: the edge
+      // functions now map these to Stripe codes, and _invokeStripe reads
+      // `code`, not `errorCode`. Safe to delete.
       case 'PAYMENT_DECLINED':
         return 'Payment declined: insufficient funds. Try another card.';
       case 'INVALID_PAYMENT_METHOD':
@@ -47,8 +158,12 @@ class ChargingException implements Exception {
         return 'This charging session has already been paid.';
       case 'ALREADY_REFUNDED':
         return 'This booking fee has already been refunded.';
+
+      // [OCPP] ocpp-status
       case 'CHARGER_NOT_FOUND':
         return 'This charger could not be found.';
+
+      // [OCPP] + [Pay] + [Refund] set by the app when there's no response.
       case 'NETWORK_ERROR':
         return 'Couldn\'t connect. Please check your connection and try again.';
       default:
@@ -130,9 +245,10 @@ abstract class ChargingSessionService {
   /// Calls `ocpp-status` for [chargerId]'s connector.
   Future<ChargerStatus> checkChargerStatus(String chargerId);
 
-  /// Calls `refund-booking-fee`: cancels [reservationId] and refunds its
-  /// booking fee (server re-checks the charger is unavailable). Returns the
-  /// refunded amount (THB).
+  /// Calls `refund-booking-fee` (Stripe Refund-style) with the booking fee's
+  /// charge id: cancels [reservationId] and refunds its fee in full (server
+  /// re-checks the charger is unavailable). Returns the refunded amount (THB).
+  /// Throws [ChargingException] with the Stripe error code on failure.
   Future<double> refundBookingFee(String reservationId);
 
   /// Calls `ocpp-remote-start`. Returns the new session id.
@@ -141,8 +257,10 @@ abstract class ChargingSessionService {
   /// Calls `ocpp-remote-stop`.
   Future<ChargingStopResult> stopCharging(String reservationId);
 
-  /// Calls `pay-charging-session`. [amount] is the bill total shown to the
-  /// driver; the server rejects it (AMOUNT_MISMATCH) if it differs.
+  /// Calls `pay-charging-session` (Stripe PaymentIntent-style). [amount] is
+  /// the bill total (THB) shown to the driver; the server rejects it
+  /// (amount_mismatch) if it differs. Throws [ChargingException] with the
+  /// Stripe error code on failure.
   Future<void> payForSession({
     required String sessionId,
     required String paymentMethodId,
@@ -221,13 +339,75 @@ class ChargingSessionSupabaseService implements ChargingSessionService {
     );
   }
 
+  /// Invokes a Stripe-style payment edge function (`pay-charging-session`,
+  /// `refund-booking-fee`) and unwraps the `{ success, data }` envelope.
+  /// Throws [ChargingException] carrying the Stripe error fields on failure.
+  Future<Map<String, dynamic>> _invokeStripe(
+    String function,
+    Map<String, dynamic> body,
+  ) async {
+    dynamic payload;
+    try {
+      final response = await _client.functions.invoke(function, body: body);
+      payload = response.data;
+    } on FunctionException catch (e) {
+      // Non-2xx (e.g. 402 card_error): the envelope is in details.
+      payload = e.details;
+      if (payload is! Map) {
+        throw ChargingException(
+          e.status == 0 ? 'NETWORK_ERROR' : 'INTERNAL_ERROR',
+          'Couldn\'t reach the payment service. Please try again.',
+          type: e.status == 0 ? 'api_connection_error' : 'api_error',
+        );
+      }
+    }
+
+    if (payload is Map && payload['data'] is Map) {
+      final data = Map<String, dynamic>.from(payload['data'] as Map);
+      if (payload['success'] == true) return data;
+      throw ChargingException(
+        data['code']?.toString() ?? 'INTERNAL_ERROR',
+        data['message']?.toString() ?? 'Something went wrong.',
+        type: data['type']?.toString() ?? 'api_error',
+        declineCode: data['decline_code']?.toString(),
+        param: data['param']?.toString(),
+        charge: data['charge']?.toString(),
+      );
+    }
+    throw ChargingException(
+      'INTERNAL_ERROR',
+      'Unexpected response.',
+      type: 'api_error',
+    );
+  }
+
   @override
   Future<double> refundBookingFee(String reservationId) async {
-    final data = await _invoke(
-      'refund-booking-fee',
-      {'reservationId': reservationId},
-    );
-    return (data['refundedAmount'] as num?)?.toDouble() ?? 0;
+    // The refund targets the booking fee's charge, so look it up first
+    // (RLS: drivers can read their own booking_fee rows).
+    final fee = await _client
+        .from('booking_fee')
+        .select('transaction_id, amount')
+        .eq('reservation_id', reservationId)
+        .maybeSingle();
+    final charge = fee?['transaction_id'] as String?;
+    if (fee == null || charge == null || charge.isEmpty) {
+      throw ChargingException(
+        'resource_missing',
+        'No booking fee payment was found for this booking.',
+        type: 'invalid_request_error',
+        param: 'charge',
+      );
+    }
+
+    // Stripe Refund-style body. Amount in satang (THB x 100), full refund.
+    final data = await _invokeStripe('refund-booking-fee', {
+      'charge': charge,
+      'amount': ((fee['amount'] as num) * 100).round(),
+      'reason': 'requested_by_customer',
+      'metadata': {'reservation_id': reservationId},
+    });
+    return ((data['amount'] as num?) ?? 0) / 100;
   }
 
   @override
@@ -258,10 +438,14 @@ class ChargingSessionSupabaseService implements ChargingSessionService {
     required String paymentMethodId,
     required double amount,
   }) async {
-    await _invoke('pay-charging-session', {
-      'sessionId': sessionId,
-      'paymentMethodId': paymentMethodId,
-      'amount': amount,
+    // Amount in satang (THB x 100), rounded to avoid float drift.
+    await _invokeStripe('pay-charging-session', {
+      'amount': (amount * 100).round(),
+      'currency': 'thb',
+      'payment_method': paymentMethodId,
+      'description': 'charging session #$sessionId',
+      'receipt_email': _client.auth.currentUser?.email,
+      'metadata': {'sessionId': sessionId},
     });
   }
 
