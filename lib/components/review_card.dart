@@ -41,7 +41,7 @@ class RatingStars extends StatelessWidget {
 class ReviewCard extends StatelessWidget {
   const ReviewCard({super.key, required this.review});
 
-  final ChargerReview review;
+  final PublicReview review;
 
   @override
   Widget build(BuildContext context) {

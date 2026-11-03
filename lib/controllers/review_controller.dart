@@ -30,20 +30,10 @@ class ReviewController {
     return review;
   }
 
-  Future<ChargerReviewSummary> fetchChargerReviewSummary(String chargerId) =>
-      service.getChargerReviewSummary(chargerId);
-
-  Future<List<ChargerReview>> fetchChargerReviews(
-    String chargerId, {
-    int limit = 20,
-    int offset = 0,
-  }) =>
-      service.getChargerReviews(chargerId, limit: limit, offset: offset);
-
-  Future<ChargerReviewSummary> fetchStationReviewSummary(String stationId) =>
+  Future<ReviewSummary> fetchStationReviewSummary(String stationId) =>
       service.getStationReviewSummary(stationId);
 
-  Future<List<ChargerReview>> fetchStationReviews(
+  Future<List<PublicReview>> fetchStationReviews(
     String stationId, {
     int limit = 20,
     int offset = 0,

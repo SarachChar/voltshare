@@ -31,7 +31,7 @@ void main() {
     });
 
     test('isLive only for available / unavailable', () {
-      Charger withStatus(String s) => Charger('c', 'n', 'AC', 'T', 7, 7, s, 0, 0);
+      Charger withStatus(String s) => Charger('c', 'n', 'AC', 'T', 7, 7, s);
       expect(withStatus('available').isLive, isTrue);
       expect(withStatus('unavailable').isLive, isTrue);
       for (final s in Charger.pendingStatuses) {

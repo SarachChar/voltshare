@@ -139,12 +139,12 @@ curl -s -X POST "https://<project-ref>.supabase.co/functions/v1/mock-charger" -d
 
 ต้องรันก่อนใช้แอปเวอร์ชันที่มีรีวิว เพราะหน้า Bookings ดึง `reviews(*)` มาด้วย ถ้ายังไม่มีตารางหน้า Bookings จะโหลดไม่ขึ้น
 
-15. `sql/functions/charger_review_summary.sql` – คะแนนเฉลี่ย + จำนวนรีวิวของ charger
-16. `sql/functions/charger_reviews.sql` – รายการรีวิวของ charger (ชื่อคนรีวิวถูก censor ฝั่ง server เช่น `P***`)
+15. `sql/functions/station_review_summary.sql` – คะแนนเฉลี่ย + จำนวนรีวิวของ station (รวมทุก charger)
+16. `sql/functions/station_reviews.sql` – รายการรีวิวของ station (ชื่อคนรีวิวถูก censor ฝั่ง server เช่น `P***`)
 
 ## ขั้นที่ 10 – Mock charger status (ปุ่ม I've Plugged In)
 
-18. รันส่วน `alter table` ท้ายไฟล์ `sql/tables/chargers.sql` (เพิ่มคอลัมน์ `mock_error_code`) **ต้องรันก่อนใช้แอป** ไม่งั้น `ocpp-status` error และกด I've Plugged In ไม่ผ่าน
+18. คอลัมน์ `chargers.mock_error_code` อยู่ใน `create table` ของ `sql/tables/chargers.sql` แล้ว (project ใหม่ไม่ต้องทำเพิ่ม) ถ้าไม่มีคอลัมน์นี้ `ocpp-status` จะ error และกด I've Plugged In ไม่ผ่าน
 
 19. รันส่วน `alter table` ท้ายไฟล์ `sql/tables/booking_fee.sql` (เพิ่ม `refunded_at`, `refund_transaction_id`)
 20. `sql/functions/refund_booking_fee.sql`

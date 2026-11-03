@@ -2,8 +2,8 @@
 -- Table: public.station_images
 -- -----------------------------------------------------------------------------
 -- PURPOSE
---   Photo gallery of a station, ordered by display_order. Replaces
---   charger_images (dropped in Task 9).
+--   Photo gallery of a station, ordered by display_order. Replaced the old
+--   charger-level charger_images table.
 --
 -- RELATIONSHIPS
 --   - station_id -> stations(id)  ON DELETE CASCADE

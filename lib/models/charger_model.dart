@@ -1,11 +1,9 @@
+/// One charging unit inside a station, stored in the `chargers` table.
+/// Location, owner, photos, businesses and promotions belong to the station
+/// (see station_model.dart).
 class Charger {
   String id;
-  String hostId;
   String name;
-  String description;
-  String address;
-  double latitude;
-  double longitude;
   String chargerType;
   String connectorType;
   double powerKw;
@@ -13,8 +11,7 @@ class Charger {
   String status;
   DateTime? createdAt;
 
-  /// The station this charger belongs to (`chargers.station_id`). Empty for
-  /// legacy rows without a station.
+  /// The station this charger belongs to (`chargers.station_id`).
   String stationId;
 
   /// The station's name, when the query embedded `stations(name)`. Empty
@@ -28,11 +25,6 @@ class Charger {
   /// the host can toggle them, and their hardware specs are locked.
   bool get isLive => status == 'available' || status == 'unavailable';
 
-  /// Great-circle distance in metres from the user's location to this charger.
-  /// Only populated by the search RPC (`search_chargers`), which returns a
-  /// `distance_m` column; null for chargers loaded through other queries.
-  double? distanceMeters;
-
   Charger(
     this.id,
     this.name,
@@ -40,14 +32,8 @@ class Charger {
     this.connectorType,
     this.powerKw,
     this.pricePerKwh,
-    this.status,
-    this.latitude,
-    this.longitude, {
-    this.hostId = '',
-    this.description = '',
-    this.address = '',
+    this.status, {
     this.createdAt,
-    this.distanceMeters,
     this.stationId = '',
     this.stationName = '',
   });
@@ -68,59 +54,20 @@ class Charger {
       (json['power_kw'] as num?)?.toDouble() ?? 0.0,
       (json['price_per_kwh'] as num?)?.toDouble() ?? 0.0,
       json['status'] as String? ?? '',
-      (json['latitude'] as num?)?.toDouble() ?? 0.0,
-      (json['longitude'] as num?)?.toDouble() ?? 0.0,
-      hostId: json['host_id'] as String? ?? '',
-      description: json['description'] as String? ?? '',
-      address: json['address'] as String? ?? '',
       createdAt: json['created_at'] == null
           ? null
           : DateTime.tryParse(json['created_at'] as String)?.toLocal(),
-      distanceMeters: (json['distance_m'] as num?)?.toDouble(),
       stationId: json['station_id'] as String? ?? '',
       stationName: station?['name'] as String? ?? '',
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'host_id': hostId,
-      'name': name,
-      'description': description,
-      'address': address,
-      'latitude': latitude,
-      'longitude': longitude,
-      'charger_type': chargerType,
-      'connector_type': connectorType,
-      'power_kw': powerKw,
-      'price_per_kwh': pricePerKwh,
-      'status': status,
-    };
-  }
-
-  /// Human-readable power label, e.g. "22 kW" or "7 kW".
+  /// Human-readable power label, e.g. "22 kW" or "7.4 kW".
   String get powerLabel {
     final value = powerKw == powerKw.roundToDouble()
         ? powerKw.toStringAsFixed(0)
         : powerKw.toString();
     return '$value kW';
-  }
-
-  /// Subtitle line for a charger card, e.g. "22 kW · Type 2".
-  String get subtitle {
-    final parts = <String>[powerLabel];
-    if (connectorType.isNotEmpty) parts.add(connectorType);
-    return parts.join(' · ');
-  }
-
-  /// Human-readable distance from the user, e.g. "0.3 km" or "850 m". Returns
-  /// an empty string when [distanceMeters] is not set (not a search result).
-  String get distanceLabel {
-    final metres = distanceMeters;
-    if (metres == null) return '';
-    if (metres < 1000) return '${metres.round()} m';
-    return '${(metres / 1000).toStringAsFixed(1)} km';
   }
 }
 
@@ -129,99 +76,10 @@ class AllChargers {
   AllChargers(this.chargers);
 
   factory AllChargers.fromJson(List<dynamic> json) {
-    List<Charger> chargers;
-    chargers = json
-        .map((item) => Charger.fromJson(item as Map<String, dynamic>))
-        .toList();
-    return AllChargers(chargers);
-  }
-}
-
-/// A single image belonging to a charger, stored in the `charger_images` table.
-///
-/// [imageUrl] holds the value straight from the DB. It may be either a full
-/// public URL (starts with "http") or a storage path inside the
-/// `voltshare_charger` bucket (e.g. `<charger_id>/1.jpg`); the service layer is
-/// responsible for turning a path into a public URL before it reaches the UI.
-class ChargerImage {
-  final String id;
-  final String chargerId;
-  final String imageUrl;
-  final int displayOrder;
-
-  ChargerImage({
-    required this.id,
-    required this.chargerId,
-    required this.imageUrl,
-    this.displayOrder = 0,
-  });
-
-  factory ChargerImage.fromJson(Map<String, dynamic> json) {
-    return ChargerImage(
-      id: json['id'] as String,
-      chargerId: json['charger_id'] as String? ?? '',
-      imageUrl: json['image_url'] as String? ?? '',
-      displayOrder: (json['display_order'] as num?)?.toInt() ?? 0,
-    );
-  }
-}
-
-/// A business available to drivers while their EV charges, stored in the
-/// `charger_businesses` table. Soft-deleted rows (`deleted_at` set) are
-/// filtered out by the service layer.
-class ChargerBusiness {
-  final String id;
-  final String chargerId;
-  final String businessType;
-  final String businessName;
-  final String description;
-
-  ChargerBusiness({
-    required this.id,
-    required this.chargerId,
-    required this.businessType,
-    required this.businessName,
-    this.description = '',
-  });
-
-  factory ChargerBusiness.fromJson(Map<String, dynamic> json) {
-    return ChargerBusiness(
-      id: json['id'] as String,
-      chargerId: json['charger_id'] as String? ?? '',
-      businessType: json['business_type'] as String? ?? '',
-      businessName: json['business_name'] as String? ?? '',
-      description: json['description'] as String? ?? '',
-    );
-  }
-}
-
-/// A photo of the businesses around a charger, stored in the `business_images`
-/// table. Keyed by `charger_id`, so all of a charger's business photos are
-/// shown together.
-///
-/// [imageUrl] holds the raw DB value — either a full public URL or a storage
-/// path inside the `voltshare_charger` bucket (e.g.
-/// `business/<charger_id>/1.jpg`). The service layer resolves paths to public
-/// URLs before they reach the UI.
-class BusinessImage {
-  final String id;
-  final String chargerId;
-  final String imageUrl;
-  final int displayOrder;
-
-  BusinessImage({
-    required this.id,
-    required this.chargerId,
-    required this.imageUrl,
-    this.displayOrder = 0,
-  });
-
-  factory BusinessImage.fromJson(Map<String, dynamic> json) {
-    return BusinessImage(
-      id: json['id'] as String,
-      chargerId: json['charger_id'] as String? ?? '',
-      imageUrl: json['image_url'] as String? ?? '',
-      displayOrder: (json['display_order'] as num?)?.toInt() ?? 0,
+    return AllChargers(
+      json
+          .map((item) => Charger.fromJson(item as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -326,90 +184,4 @@ class ChargerAvailability {
           ChargerAvailability.closed(chargerId: chargerId, day: day);
     });
   }
-}
-
-/// A promotion attached to a charger, stored in the `charger_promotions` table.
-///
-/// [status] is the raw DB value ("ACTIVE" / "INACTIVE" / "EXPIRED"). Use
-/// [isActive] for a boolean view of it. [validFrom] / [validUntil] come from
-/// Postgres `timestamptz` columns and may be null when open-ended.
-class ChargerPromotion {
-  final String id;
-  final String chargerId;
-  final String title;
-  final String description;
-  final DateTime? validFrom;
-  final DateTime? validUntil;
-  final String status;
-  final String termsAndConditions;
-
-  ChargerPromotion({
-    required this.id,
-    required this.chargerId,
-    required this.title,
-    this.description = '',
-    this.validFrom,
-    this.validUntil,
-    this.status = 'ACTIVE',
-    this.termsAndConditions = '',
-  });
-
-  factory ChargerPromotion.fromJson(Map<String, dynamic> json) {
-    return ChargerPromotion(
-      id: json['id'] as String,
-      chargerId: json['charger_id'] as String? ?? '',
-      title: json['title'] as String? ?? '',
-      description: json['description'] as String? ?? '',
-      validFrom: _parseDate(json['valid_from']),
-      validUntil: _parseDate(json['valid_until']),
-      status: json['status'] as String? ?? 'ACTIVE',
-      termsAndConditions: json['terms_and_conditions'] as String? ?? '',
-    );
-  }
-
-  /// Parses a DB timestamp (stored as UTC) into local device time, so
-  /// [validRangeLabel]/[formatDate] show Thailand time (UTC+7) instead of
-  /// the raw UTC value from Postgres.
-  static DateTime? _parseDate(dynamic value) {
-    if (value == null) return null;
-    if (value is DateTime) return value.toLocal();
-    return DateTime.tryParse(value.toString())?.toLocal();
-  }
-
-  bool get isActive => status.toLowerCase() == 'active';
-
-  /// Human-readable validity range, e.g. "1 Jan 2026 - 31 Mar 2026".
-  /// Falls back gracefully when either bound is missing.
-  String get validRangeLabel {
-    final from = validFrom;
-    final until = validUntil;
-    if (from == null && until == null) return 'No expiry';
-    if (from != null && until != null) {
-      return '${_formatDate(from)} - ${_formatDate(until)}';
-    }
-    if (until != null) return 'Until ${_formatDate(until)}';
-    return 'From ${_formatDate(from!)}';
-  }
-
-  static const List<String> _months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
-  static String _formatDate(DateTime date) {
-    return '${date.day} ${_months[date.month - 1]} ${date.year}';
-  }
-
-  /// Public helper to format a single date as "1 Jan 2026".
-  static String formatDate(DateTime date) => _formatDate(date);
 }

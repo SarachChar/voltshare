@@ -15,10 +15,7 @@
 --   - 7 rows per charger in public.charger_availability (0 = Sunday ..
 --     6 = Saturday). All chargers in a station share the station's hours.
 --
--- TRANSITION (until Task 9)
---   The old location columns on chargers (host_id, description, address,
---   latitude, longitude) are filled with the station's values so screens that
---   still read chargers directly keep working.
+-- Chargers only get charger fields; location and owner come from the station.
 --
 -- DETERMINISTIC
 --   Station ids:  md5('voltshare-mock-station-<i>')::uuid
@@ -162,9 +159,7 @@ with slots as (
 )
 insert into public.chargers (
   id, station_id, name, charger_type, connector_type, power_kw, price_per_kwh,
-  status, created_at,
-  -- transition columns (dropped in Task 9)
-  host_id, description, address, latitude, longitude
+  status, created_at
 )
 select
   md5('voltshare-mock-station-' || sl.i || '-charger-' || sl.j)::uuid,
@@ -176,12 +171,7 @@ select
   -- AC 6.50-8.50, DC 7.50-9.50, rounded to 0.25 THB
   round(((case when t.charger_type = 'AC' then 6.50 else 7.50 end) + sl.r_price * 2.0) * 4) / 4,
   case when sl.r_status < 0.05 then 'unavailable' else 'available' end,
-  sl.created_at,
-  '66207295-49bd-4bd8-87d5-03504dcf2c38'::uuid,
-  sl.description,
-  sl.address,
-  sl.latitude,
-  sl.longitude
+  sl.created_at
 from slots sl
 cross join lateral (
   select spec.charger_type, spec.connector_type, spec.power_kw

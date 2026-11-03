@@ -2,7 +2,8 @@
 -- host_revenue
 -- -----------------------------------------------------------------------------
 -- Revenue figures for the signed-in HOST (auth.uid()), for the host
--- dashboard's Revenue tab, header stats and My Chargers cards.
+-- dashboard's Revenue tab and header stats, and the per-charger figures on
+-- the host station screen.
 --
 -- WHAT COUNTS
 --   - Only session_payments with status = 'paid'.
@@ -42,9 +43,7 @@
 -- WHY SECURITY DEFINER
 --   Hosts can't read drivers' session_payments (RLS). This function joins
 --   payments -> sessions -> reservations -> chargers -> stations on the
---   server, scoped to stations.host_id = auth.uid() (plus legacy chargers
---   with no station and chargers.host_id = auth.uid()), and returns totals
---   only.
+--   server, scoped to stations.host_id = auth.uid(), and returns totals only.
 --
 -- CHECK THAT OTHER HOSTS SEE NOTHING (SQL Editor, replace the uuids):
 --   set local role authenticated;
@@ -73,14 +72,12 @@ as $$
                                    now() at time zone 'Asia/Bangkok')) as sel_month,
       date_trunc('month', now() at time zone 'Asia/Bangkok') as cur_month
   ),
-  -- The host's chargers: owned through their station, or (legacy rows with
-  -- no station yet) through chargers.host_id. Task 9 drops the legacy branch.
+  -- The host's chargers: owned through their station.
   my_chargers as (
     select c.id, c.name, c.status, c.station_id, st.name as station_name
     from chargers c
-    left join stations st on st.id = c.station_id
+    join stations st on st.id = c.station_id
     where st.host_id = auth.uid()
-       or (c.station_id is null and c.host_id = auth.uid())
   ),
   paid as (
     select

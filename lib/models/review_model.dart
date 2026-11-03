@@ -59,16 +59,16 @@ class Review {
   }
 }
 
-/// A public review shown on a charger's page (from the `charger_reviews`
+/// A public review shown on a station's page (from the `station_reviews`
 /// RPC). [reviewerName] is already censored by the server, e.g. "P***".
-class ChargerReview {
+class PublicReview {
   final String id;
   final int rating;
   final String comment;
   final DateTime createdAt;
   final String reviewerName;
 
-  ChargerReview({
+  PublicReview({
     required this.id,
     required this.rating,
     required this.comment,
@@ -76,8 +76,8 @@ class ChargerReview {
     required this.reviewerName,
   });
 
-  factory ChargerReview.fromJson(Map<String, dynamic> json) {
-    return ChargerReview(
+  factory PublicReview.fromJson(Map<String, dynamic> json) {
+    return PublicReview(
       id: json['id'] as String,
       rating: (json['rating'] as num?)?.toInt() ?? 0,
       comment: json['comment'] as String? ?? '',
@@ -106,18 +106,18 @@ class ChargerReview {
   }
 }
 
-/// Average rating and review count for a charger (`charger_review_summary`).
-class ChargerReviewSummary {
+/// Average rating and review count for a station (`station_review_summary`).
+class ReviewSummary {
   /// Null when there are no reviews.
   final double? averageRating;
   final int reviewCount;
 
-  const ChargerReviewSummary({this.averageRating, this.reviewCount = 0});
+  const ReviewSummary({this.averageRating, this.reviewCount = 0});
 
-  static const ChargerReviewSummary empty = ChargerReviewSummary();
+  static const ReviewSummary empty = ReviewSummary();
 
-  factory ChargerReviewSummary.fromJson(Map<String, dynamic> json) {
-    return ChargerReviewSummary(
+  factory ReviewSummary.fromJson(Map<String, dynamic> json) {
+    return ReviewSummary(
       averageRating: (json['average_rating'] as num?)?.toDouble(),
       reviewCount: (json['review_count'] as num?)?.toInt() ?? 0,
     );

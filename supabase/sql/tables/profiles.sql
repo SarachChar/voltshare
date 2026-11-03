@@ -5,12 +5,13 @@
 -- developing features; this mirrors the live table definition in Supabase.
 --
 -- PURPOSE
---   Stores user profile data (name, phone, email). Referenced by chargers
---   (host_id) and payment_methods (user_id).
+--   Stores user profile data (name, phone, email). Referenced by stations
+--   (host_id), reservations and payment_methods (user_id).
 --
 -- RELATIONSHIPS
 --   - No outgoing foreign keys.
---   - Referenced by: chargers.host_id, payment_methods.user_id (both CASCADE).
+--   - Referenced by: stations.host_id, reservations.user_id,
+--     payment_methods.user_id (all CASCADE).
 --
 -- TRIGGERS
 --   - profiles_set_updated_at: set_updated_at() BEFORE UPDATE. Also fires on

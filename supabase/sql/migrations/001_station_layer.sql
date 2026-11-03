@@ -1,6 +1,11 @@
 -- =============================================================================
 -- Migration 001: station layer (Task 1)
 -- -----------------------------------------------------------------------------
+-- HISTORY ONLY. Already applied to the live project, then superseded by
+-- migration 002. A fresh project uses tables/, policies/rls.sql and
+-- policies/policies.sql, which already hold the final structure; don't run
+-- this there (its "chargers.sql ALTER block" no longer exists).
+--
 -- Adds ownership rules for stations and the station_* tables, and lets the
 -- chargers / charger_availability policies check ownership through the
 -- station as well as the old chargers.host_id.

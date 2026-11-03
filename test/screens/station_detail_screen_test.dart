@@ -27,9 +27,8 @@ void main() {
   setUp(() {
     stationService = FakeStationService()
       ..chargers = [
-        Charger('c1', 'Charger 1', 'DC', 'CCS2', 120, 8.5, 'available', 0, 0),
-        Charger('c2', 'Charger 2', 'AC', 'Type 2', 7.4, 6.5, 'unavailable', 0,
-            0),
+        Charger('c1', 'Charger 1', 'DC', 'CCS2', 120, 8.5, 'available'),
+        Charger('c2', 'Charger 2', 'AC', 'Type 2', 7.4, 6.5, 'unavailable'),
       ]
       ..availability = {
         'c1': [
@@ -44,7 +43,7 @@ void main() {
         ],
       };
     reviewService = FakeReviewService()
-      ..summary = const ChargerReviewSummary(averageRating: 4.5, reviewCount: 2);
+      ..summary = const ReviewSummary(averageRating: 4.5, reviewCount: 2);
     stationController = StationController(stationService);
     booked = [];
   });

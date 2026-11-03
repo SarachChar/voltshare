@@ -1,15 +1,24 @@
 -- =============================================================================
 -- RLS policies (public + storage) + Realtime publication
 -- -----------------------------------------------------------------------------
+-- Final structure (stations own location / photos / businesses / promotions;
+-- chargers belong to a station). The live project got here through
+-- sql/migrations/001 and 002; a fresh project only needs this file.
+--
 -- HOW TO RUN
 --   Run once in the Supabase SQL Editor AFTER all table files and rls.sql.
 --   `create policy` and `alter publication ... add table` are not idempotent:
 --   re-running this file errors on objects that already exist.
 --
+-- OWNERSHIP
+--   A host owns a station (stations.host_id = auth.uid()) and, through it,
+--   the station's chargers, hours, photos, businesses and promotions.
+--
 -- SECTIONS
---   1. App tables (exported from the live project's pg_policies)
---   2. Storage (bucket voltshare_charger)
---   3. Charging sessions / streams / payments + Realtime
+--   1. App tables
+--   2. Stations and their child tables
+--   3. Storage (bucket voltshare_charger)
+--   4. Charging sessions / streams / payments + Realtime
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -21,61 +30,6 @@ create policy "Users can add own booking fees" on public.booking_fee as PERMISSI
 create policy "Users can view own booking fees" on public.booking_fee as PERMISSIVE for SELECT to authenticated using ((EXISTS ( SELECT 1
    FROM reservations r
   WHERE ((r.id = booking_fee.reservation_id) AND (r.user_id = auth.uid())))));
-create policy "Enable read access for all users" on public.business_images as PERMISSIVE for SELECT to public using (true);
-create policy business_images_insert_owner on public.business_images as PERMISSIVE for INSERT to authenticated with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = business_images.charger_id) AND (c.host_id = auth.uid())))));
-create policy business_images_update_owner on public.business_images as PERMISSIVE for UPDATE to authenticated using ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = business_images.charger_id) AND (c.host_id = auth.uid()))))) with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = business_images.charger_id) AND (c.host_id = auth.uid())))));
-create policy "hosts can delete their business images" on public.business_images as PERMISSIVE for DELETE to authenticated using ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = business_images.charger_id) AND (c.host_id = auth.uid())))));
-create policy "Enable read access for all users" on public.charger_availability as PERMISSIVE for SELECT to public using (true);
-create policy charger_availability_insert_owner on public.charger_availability as PERMISSIVE for INSERT to authenticated with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_availability.charger_id) AND (c.host_id = auth.uid())))));
-create policy charger_availability_update_owner on public.charger_availability as PERMISSIVE for UPDATE to authenticated using ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_availability.charger_id) AND (c.host_id = auth.uid()))))) with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_availability.charger_id) AND (c.host_id = auth.uid())))));
-create policy "hosts can delete their charger availability" on public.charger_availability as PERMISSIVE for DELETE to authenticated using ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_availability.charger_id) AND (c.host_id = auth.uid())))));
-create policy "Enable read access for all users" on public.charger_businesses as PERMISSIVE for SELECT to public using (true);
-create policy charger_businesses_insert_owner on public.charger_businesses as PERMISSIVE for INSERT to authenticated with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_businesses.charger_id) AND (c.host_id = auth.uid())))));
-create policy charger_businesses_update_owner on public.charger_businesses as PERMISSIVE for UPDATE to authenticated using ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_businesses.charger_id) AND (c.host_id = auth.uid()))))) with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_businesses.charger_id) AND (c.host_id = auth.uid())))));
-create policy "Enable read access for all users" on public.charger_images as PERMISSIVE for SELECT to public using (true);
-create policy charger_images_insert_owner on public.charger_images as PERMISSIVE for INSERT to authenticated with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_images.charger_id) AND (c.host_id = auth.uid())))));
-create policy charger_images_update_owner on public.charger_images as PERMISSIVE for UPDATE to authenticated using ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_images.charger_id) AND (c.host_id = auth.uid()))))) with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_images.charger_id) AND (c.host_id = auth.uid())))));
-create policy "hosts can delete their charger images" on public.charger_images as PERMISSIVE for DELETE to authenticated using ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_images.charger_id) AND (c.host_id = auth.uid())))));
-create policy "Enable read access for all users" on public.charger_promotions as PERMISSIVE for SELECT to public using (true);
-create policy "Hosts can insert their own charger promotions" on public.charger_promotions as PERMISSIVE for INSERT to authenticated with check ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_promotions.charger_id) AND (c.host_id = auth.uid())))));
-create policy "Hosts can update their own charger promotions" on public.charger_promotions as PERMISSIVE for UPDATE to authenticated using ((EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = charger_promotions.charger_id) AND (c.host_id = auth.uid())))));
-create policy "Chargers are viewable by everyone" on public.chargers as PERMISSIVE for SELECT to public using (true);
-create policy "Owners can insert their own chargers" on public.chargers as PERMISSIVE for INSERT to authenticated with check ((auth.uid() = host_id));
-create policy "Owners can update their own chargers" on public.chargers as PERMISSIVE for UPDATE to authenticated using ((auth.uid() = host_id)) with check ((auth.uid() = host_id));
 create policy "Users can add own payment methods" on public.payment_methods as PERMISSIVE for INSERT to authenticated with check ((auth.uid() = user_id));
 create policy "Users can delete own payment methods" on public.payment_methods as PERMISSIVE for DELETE to authenticated using ((auth.uid() = user_id));
 create policy "Users can update own payment methods" on public.payment_methods as PERMISSIVE for UPDATE to authenticated using ((auth.uid() = user_id)) with check ((auth.uid() = user_id));
@@ -107,21 +61,174 @@ create policy "Drivers review own completed reservations"
   );
 
 -- -----------------------------------------------------------------------------
--- 2. Storage (bucket voltshare_charger)
+-- 2. Stations and their child tables
 -- -----------------------------------------------------------------------------
-create policy charger_images_storage_insert_owner on storage.objects as PERMISSIVE for INSERT to authenticated with check (((bucket_id = 'voltshare_charger'::text) AND (split_part(name, '/'::text, 1) = ANY (ARRAY['charger'::text, 'business'::text])) AND (EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = (split_part(objects.name, '/'::text, 2))::uuid) AND (c.host_id = auth.uid()))))));
-create policy charger_images_storage_update_owner on storage.objects as PERMISSIVE for UPDATE to authenticated using (((bucket_id = 'voltshare_charger'::text) AND (split_part(name, '/'::text, 1) = ANY (ARRAY['charger'::text, 'business'::text])) AND (EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = (split_part(objects.name, '/'::text, 2))::uuid) AND (c.host_id = auth.uid())))))) with check (((bucket_id = 'voltshare_charger'::text) AND (split_part(name, '/'::text, 1) = ANY (ARRAY['charger'::text, 'business'::text])) AND (EXISTS ( SELECT 1
-   FROM chargers c
-  WHERE ((c.id = (split_part(objects.name, '/'::text, 2))::uuid) AND (c.host_id = auth.uid()))))));
+-- stations: anyone reads; the host writes their own. No DELETE (no feature).
+create policy "Stations are viewable by everyone"
+  on public.stations for select to public
+  using (true);
+
+create policy "Hosts can insert their own stations"
+  on public.stations for insert to authenticated
+  with check (auth.uid() = host_id);
+
+create policy "Hosts can update their own stations"
+  on public.stations for update to authenticated
+  using (auth.uid() = host_id)
+  with check (auth.uid() = host_id);
+
+-- chargers: anyone reads; the station's host writes.
+create policy "Chargers are viewable by everyone"
+  on public.chargers for select to public
+  using (true);
+
+create policy "Owners can insert their own chargers"
+  on public.chargers for insert to authenticated
+  with check (exists (select 1 from public.stations s
+                      where s.id = chargers.station_id and s.host_id = auth.uid()));
+
+create policy "Owners can update their own chargers"
+  on public.chargers for update to authenticated
+  using      (exists (select 1 from public.stations s
+                      where s.id = chargers.station_id and s.host_id = auth.uid()))
+  with check (exists (select 1 from public.stations s
+                      where s.id = chargers.station_id and s.host_id = auth.uid()));
+
+-- charger_availability: anyone reads; the charger's station host writes.
+create policy "Enable read access for all users"
+  on public.charger_availability for select to public
+  using (true);
+
+create policy charger_availability_insert_owner
+  on public.charger_availability for insert to authenticated
+  with check (exists (
+    select 1 from public.chargers c
+    join public.stations s on s.id = c.station_id
+    where c.id = charger_availability.charger_id and s.host_id = auth.uid()
+  ));
+
+create policy charger_availability_update_owner
+  on public.charger_availability for update to authenticated
+  using (exists (
+    select 1 from public.chargers c
+    join public.stations s on s.id = c.station_id
+    where c.id = charger_availability.charger_id and s.host_id = auth.uid()
+  ))
+  with check (exists (
+    select 1 from public.chargers c
+    join public.stations s on s.id = c.station_id
+    where c.id = charger_availability.charger_id and s.host_id = auth.uid()
+  ));
+
+create policy "hosts can delete their charger availability"
+  on public.charger_availability for delete to authenticated
+  using (exists (
+    select 1 from public.chargers c
+    join public.stations s on s.id = c.station_id
+    where c.id = charger_availability.charger_id and s.host_id = auth.uid()
+  ));
+
+-- station_* child tables: anyone reads; the station's host writes.
+-- Images: insert / update / delete. Businesses & promotions: insert / update
+-- only (soft delete via deleted_at).
+create policy "Station images are viewable by everyone"
+  on public.station_images for select to public using (true);
+create policy "Hosts can insert their station images"
+  on public.station_images for insert to authenticated
+  with check (exists (select 1 from public.stations s
+                      where s.id = station_images.station_id and s.host_id = auth.uid()));
+create policy "Hosts can update their station images"
+  on public.station_images for update to authenticated
+  using      (exists (select 1 from public.stations s
+                      where s.id = station_images.station_id and s.host_id = auth.uid()))
+  with check (exists (select 1 from public.stations s
+                      where s.id = station_images.station_id and s.host_id = auth.uid()));
+create policy "Hosts can delete their station images"
+  on public.station_images for delete to authenticated
+  using (exists (select 1 from public.stations s
+                 where s.id = station_images.station_id and s.host_id = auth.uid()));
+
+create policy "Station business images are viewable by everyone"
+  on public.station_business_images for select to public using (true);
+create policy "Hosts can insert their station business images"
+  on public.station_business_images for insert to authenticated
+  with check (exists (select 1 from public.stations s
+                      where s.id = station_business_images.station_id and s.host_id = auth.uid()));
+create policy "Hosts can update their station business images"
+  on public.station_business_images for update to authenticated
+  using      (exists (select 1 from public.stations s
+                      where s.id = station_business_images.station_id and s.host_id = auth.uid()))
+  with check (exists (select 1 from public.stations s
+                      where s.id = station_business_images.station_id and s.host_id = auth.uid()));
+create policy "Hosts can delete their station business images"
+  on public.station_business_images for delete to authenticated
+  using (exists (select 1 from public.stations s
+                 where s.id = station_business_images.station_id and s.host_id = auth.uid()));
+
+create policy "Station businesses are viewable by everyone"
+  on public.station_businesses for select to public using (true);
+create policy "Hosts can insert their station businesses"
+  on public.station_businesses for insert to authenticated
+  with check (exists (select 1 from public.stations s
+                      where s.id = station_businesses.station_id and s.host_id = auth.uid()));
+create policy "Hosts can update their station businesses"
+  on public.station_businesses for update to authenticated
+  using      (exists (select 1 from public.stations s
+                      where s.id = station_businesses.station_id and s.host_id = auth.uid()))
+  with check (exists (select 1 from public.stations s
+                      where s.id = station_businesses.station_id and s.host_id = auth.uid()));
+
+create policy "Station promotions are viewable by everyone"
+  on public.station_promotions for select to public using (true);
+create policy "Hosts can insert their station promotions"
+  on public.station_promotions for insert to authenticated
+  with check (exists (select 1 from public.stations s
+                      where s.id = station_promotions.station_id and s.host_id = auth.uid()));
+create policy "Hosts can update their station promotions"
+  on public.station_promotions for update to authenticated
+  using      (exists (select 1 from public.stations s
+                      where s.id = station_promotions.station_id and s.host_id = auth.uid()))
+  with check (exists (select 1 from public.stations s
+                      where s.id = station_promotions.station_id and s.host_id = auth.uid()));
+
+-- -----------------------------------------------------------------------------
+-- 3. Storage (bucket voltshare_charger)
+-- -----------------------------------------------------------------------------
+-- Paths: station/<station_id>/... and station_business/<station_id>/...
+-- Writes: the station's host. Read / delete: any signed-in user (kept as in
+-- the original project).
+create policy station_images_storage_insert_owner
+  on storage.objects for insert to authenticated
+  with check (
+    bucket_id = 'voltshare_charger'
+    and split_part(name, '/', 1) = any (array['station', 'station_business'])
+    and exists (select 1 from public.stations s
+                where s.id::text = split_part(objects.name, '/', 2)
+                  and s.host_id = auth.uid())
+  );
+
+create policy station_images_storage_update_owner
+  on storage.objects for update to authenticated
+  using (
+    bucket_id = 'voltshare_charger'
+    and split_part(name, '/', 1) = any (array['station', 'station_business'])
+    and exists (select 1 from public.stations s
+                where s.id::text = split_part(objects.name, '/', 2)
+                  and s.host_id = auth.uid())
+  )
+  with check (
+    bucket_id = 'voltshare_charger'
+    and split_part(name, '/', 1) = any (array['station', 'station_business'])
+    and exists (select 1 from public.stations s
+                where s.id::text = split_part(objects.name, '/', 2)
+                  and s.host_id = auth.uid())
+  );
+
 create policy "delete charger objects" on storage.objects as PERMISSIVE for DELETE to authenticated using ((bucket_id = 'voltshare_charger'::text));
 create policy "read charger objects" on storage.objects as PERMISSIVE for SELECT to authenticated using ((bucket_id = 'voltshare_charger'::text));
 
 -- -----------------------------------------------------------------------------
--- 3. Charging sessions / streams / payments + Realtime
+-- 4. Charging sessions / streams / payments + Realtime
 -- -----------------------------------------------------------------------------
 -- ACCESS MODEL
 --   - Drivers can SELECT only rows belonging to their own reservations.

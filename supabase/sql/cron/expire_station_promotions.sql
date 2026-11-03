@@ -2,8 +2,8 @@
 -- Cron: expire-station-promotions
 -- -----------------------------------------------------------------------------
 -- Flips ACTIVE station promotions whose valid_until has passed to EXPIRED.
--- Same job as expire-charger-promotions, for the station_promotions table.
--- (expire-charger-promotions is unscheduled in Task 9 with its table.)
+-- Replaced the old expire-charger-promotions job (unscheduled by migration
+-- 002 together with the charger_promotions table).
 --
 -- SCHEDULE
 --   Every day at 00:00 Bangkok time (UTC+7) = 17:00 UTC: '0 17 * * *'.

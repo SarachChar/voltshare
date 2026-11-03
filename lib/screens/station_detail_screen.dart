@@ -89,8 +89,8 @@ class _StationDetailScreenState extends State<StationDetailScreen>
   List<StationBusinessImage> _businessImages = const [];
   bool _isLoadingBusinessImages = true;
 
-  ChargerReviewSummary _reviewSummary = ChargerReviewSummary.empty;
-  List<ChargerReview> _latestReviews = const [];
+  ReviewSummary _reviewSummary = ReviewSummary.empty;
+  List<PublicReview> _latestReviews = const [];
   bool _isLoadingReviews = true;
 
   String get _stationId => widget.station.id;
@@ -198,8 +198,8 @@ class _StationDetailScreenState extends State<StationDetailScreen>
       ]);
       if (!mounted) return;
       setState(() {
-        _reviewSummary = results[0] as ChargerReviewSummary;
-        _latestReviews = results[1] as List<ChargerReview>;
+        _reviewSummary = results[0] as ReviewSummary;
+        _latestReviews = results[1] as List<PublicReview>;
         _isLoadingReviews = false;
       });
     } catch (_) {

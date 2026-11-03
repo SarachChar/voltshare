@@ -1,9 +1,6 @@
 -- =============================================================================
 -- Table: public.chargers
 -- -----------------------------------------------------------------------------
--- Schema reference for the `chargers` table. Kept here for reference while
--- developing features; this mirrors the live table definition in Supabase.
---
 -- PURPOSE
 --   One charging unit inside a station: hardware specs, pricing and approval
 --   status. Location, owner, photos, businesses and promotions live on the
@@ -11,73 +8,56 @@
 --   reservations.
 --
 -- RELATIONSHIPS
---   - station_id -> stations(id)  ON DELETE CASCADE  (added by the "Station
---     layer" ALTER at the bottom; nullable until Task 9)
---   - host_id -> profiles(id)  ON DELETE CASCADE  (legacy, nullable; dropped
---     in Task 9 together with description / address / latitude / longitude)
+--   - station_id -> stations(id)  ON DELETE CASCADE  (required)
+--   - Ownership = the station's host (stations.host_id); RLS checks it there.
+--
+-- INDEXES
+--   - chargers_station_status_connector_idx on (station_id, status,
+--     connector_type): the station search filters and per-station lookups.
 --
 -- TRIGGERS
 --   - chargers_set_updated_at: set_updated_at() BEFORE UPDATE.
 --
 -- NOTES
---   - latitude/longitude are numeric(10,7); used by the search functions
---     (see supabase/sql/functions/) via earthdistance.
---   - status is one of: review, setup, available, unavailable, rejected
---     (default 'available'), enforced by a check constraint.
+--   - name is the unit's label inside its station, e.g. "Charger 1".
+--   - status: review, setup, available, unavailable, rejected (check
+--     constraint). The app creates chargers in 'review'; 'available' /
+--     'unavailable' = live (the host can toggle; specs are locked in the app).
 --   - price_per_kwh and power_kw are numeric(10,2).
 --   - mock_error_code: TEST SWITCH for the mock charger (ocpp-status edge
---     function). Null = connector Available; set to an OCPP errorCode
---     (e.g. 'GroundFailure') = Unavailable, so "I've Plugged In" cancels the
---     booking and refunds its fee (refund_booking_fee).
---     Not read by the app. Added with the ALTER at the bottom of this file.
+--     function). Null = connector Available; an OCPP errorCode (e.g.
+--     'GroundFailure') = Unavailable, so "I've Plugged In" cancels the booking
+--     and refunds its fee (refund_booking_fee). Not read by the app.
+--       update chargers set mock_error_code = 'GroundFailure' where id = '<uuid>';
+--       update chargers set mock_error_code = null            where id = '<uuid>';
+--   - RLS: enabled in policies/rls.sql; policies in policies/policies.sql.
+--
+-- HOW TO RUN (fresh project)
+--   After profiles.sql and stations.sql (station_id references stations).
+--   The live project reached this shape through sql/migrations/001 and 002.
 -- =============================================================================
 
 create table public.chargers (
   id uuid not null default gen_random_uuid (),
-  host_id uuid not null,
+  station_id uuid not null,
   name character varying not null,
-  description text null,
-  address text null,
-  latitude numeric(10, 7) null,
-  longitude numeric(10, 7) null,
   charger_type character varying null,
   connector_type character varying null,
   power_kw numeric(10, 2) null,
   price_per_kwh numeric(10, 2) null,
   status character varying not null default 'available'::character varying,
+  mock_error_code character varying(40) null,
   created_at timestamp with time zone null default now(),
   updated_at timestamp with time zone null default now(),
   constraint chargers_pkey primary key (id),
-  constraint chargers_host_id_fkey foreign KEY (host_id) references profiles (id) on delete CASCADE,
+  constraint chargers_station_id_fkey foreign key (station_id)
+    references stations (id) on delete cascade,
   constraint chargers_status_check check (
-    (
-      (status)::text = any (
-        array[
-          ('review'::character varying)::text,
-          ('setup'::character varying)::text,
-          ('available'::character varying)::text,
-          ('unavailable'::character varying)::text,
-          ('rejected'::character varying)::text
-        ]
-      )
+    (status)::text = any (
+      array['review', 'setup', 'available', 'unavailable', 'rejected']::text[]
     )
-  )
-) TABLESPACE pg_default;
-
-create trigger chargers_set_updated_at before
-update on chargers for each row
-execute function set_updated_at ();
-
--- -----------------------------------------------------------------------------
--- Mock charger status switch (run once in the SQL Editor).
---   update chargers set mock_error_code = 'GroundFailure' where id = '<uuid>';
---   update chargers set mock_error_code = null            where id = '<uuid>';
--- -----------------------------------------------------------------------------
-alter table public.chargers
-  add column if not exists mock_error_code character varying(40) null;
-
-alter table public.chargers
-  add constraint chargers_mock_error_code_valid check (
+  ),
+  constraint chargers_mock_error_code_valid check (
     mock_error_code is null
     or (mock_error_code)::text = any (array[
       'ConnectorLockFailure', 'EVCommunicationError', 'GroundFailure',
@@ -86,26 +66,12 @@ alter table public.chargers
       'ReaderFailure', 'ResetFailure', 'UnderVoltage', 'OverVoltage',
       'WeakSignal'
     ]::text[])
-  );
-
--- -----------------------------------------------------------------------------
--- Station layer (Task 1). Each charger belongs to a station.
---   - station_id is nullable during the transition; Task 9 makes it NOT NULL
---     and drops host_id / description / address / latitude / longitude
---     (those now live on stations).
---   - host_id becomes nullable: chargers created by the new host flow only set
---     station_id. Ownership = stations.host_id.
---   - Index serves the station search filters (connector / status per station).
--- -----------------------------------------------------------------------------
-alter table public.chargers
-  add column if not exists station_id uuid null;
-
-alter table public.chargers
-  add constraint chargers_station_id_fkey foreign key (station_id)
-    references stations (id) on delete cascade;
-
-alter table public.chargers
-  alter column host_id drop not null;
+  )
+) tablespace pg_default;
 
 create index if not exists chargers_station_status_connector_idx
   on public.chargers using btree (station_id, status, connector_type);
+
+create trigger chargers_set_updated_at before
+update on chargers for each row
+execute function set_updated_at ();

@@ -16,7 +16,7 @@ class FakeChargerService implements ChargerService {
   }) async {
     statusUpdates.add('$chargerId $status');
     if (statusError != null) throw statusError!;
-    return Charger(chargerId, 'x', 'AC', 'Type 2', 7, 7, status, 0, 0);
+    return Charger(chargerId, 'x', 'AC', 'Type 2', 7, 7, status);
   }
 
   @override

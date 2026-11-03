@@ -3,7 +3,7 @@
 -- -----------------------------------------------------------------------------
 -- PURPOSE
 --   Businesses drivers can use while charging at a station (cafe, gym, ...).
---   Replaces charger_businesses (dropped in Task 9).
+--   Replaced the old charger-level charger_businesses table.
 --
 -- RELATIONSHIPS
 --   - station_id -> stations(id)  ON DELETE CASCADE

@@ -29,9 +29,9 @@ void main() {
   setUp(() {
     service = FakeStationService()
       ..allChargers = [
-        Charger('c1', 'Charger 1', 'DC', 'CCS2', 120, 8.5, 'available', 0, 0),
-        Charger('c2', 'Charger 2', 'AC', 'Type 2', 7.4, 6.5, 'review', 0, 0),
-        Charger('c3', 'Charger 3', 'AC', 'Type 2', 22, 7, 'unavailable', 0, 0),
+        Charger('c1', 'Charger 1', 'DC', 'CCS2', 120, 8.5, 'available'),
+        Charger('c2', 'Charger 2', 'AC', 'Type 2', 7.4, 6.5, 'review'),
+        Charger('c3', 'Charger 3', 'AC', 'Type 2', 22, 7, 'unavailable'),
       ]
       ..promotions = const [
         StationPromotion(
@@ -181,13 +181,13 @@ void main() {
       openChargerForm: (_, s, charger, count) async {
         passedCharger = charger;
         passedCount = count;
-        return Charger('c4', 'Charger 4', 'AC', 'Type 2', 7, 7, 'review', 0, 0);
+        return Charger('c4', 'Charger 4', 'AC', 'Type 2', 7, 7, 'review');
       },
     );
 
     service.allChargers = [
       ...service.allChargers,
-      Charger('c4', 'Charger 4', 'AC', 'Type 2', 7, 7, 'review', 0, 0),
+      Charger('c4', 'Charger 4', 'AC', 'Type 2', 7, 7, 'review'),
     ];
     await tester.tap(find.byKey(const ValueKey('add-charger')));
     await tester.pumpAndSettle();

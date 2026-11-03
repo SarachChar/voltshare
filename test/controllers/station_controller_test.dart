@@ -87,7 +87,7 @@ void main() {
 
   test('fetchStationChargers forwards the station id', () async {
     service.chargers = [
-      Charger('c1', 'Charger 1', 'AC', 'Type 2', 7.4, 7.0, 'available', 0, 0),
+      Charger('c1', 'Charger 1', 'AC', 'Type 2', 7.4, 7.0, 'available'),
     ];
 
     final result = await controller.fetchStationChargers('s9');

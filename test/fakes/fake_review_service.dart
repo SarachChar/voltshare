@@ -1,11 +1,11 @@
 import 'package:voltshare_app/models/review_model.dart';
 import 'package:voltshare_app/services/review_service.dart';
 
-/// In-memory [ReviewService] for tests. Station and charger calls return the
-/// same [summary] / [reviews].
+/// In-memory [ReviewService] for tests: station calls return [summary] /
+/// [reviews].
 class FakeReviewService implements ReviewService {
-  ChargerReviewSummary summary = ChargerReviewSummary.empty;
-  List<ChargerReview> reviews = const [];
+  ReviewSummary summary = ReviewSummary.empty;
+  List<PublicReview> reviews = const [];
 
   String? lastStationId;
 
@@ -22,21 +22,7 @@ class FakeReviewService implements ReviewService {
   }
 
   @override
-  Future<ChargerReviewSummary> getChargerReviewSummary(
-    String chargerId,
-  ) async =>
-      summary;
-
-  @override
-  Future<List<ChargerReview>> getChargerReviews(
-    String chargerId, {
-    int limit = 20,
-    int offset = 0,
-  }) async =>
-      reviews;
-
-  @override
-  Future<ChargerReviewSummary> getStationReviewSummary(
+  Future<ReviewSummary> getStationReviewSummary(
     String stationId,
   ) async {
     lastStationId = stationId;
@@ -44,7 +30,7 @@ class FakeReviewService implements ReviewService {
   }
 
   @override
-  Future<List<ChargerReview>> getStationReviews(
+  Future<List<PublicReview>> getStationReviews(
     String stationId, {
     int limit = 20,
     int offset = 0,

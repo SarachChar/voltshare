@@ -4,7 +4,7 @@ import 'package:voltshare_app/components/review_card.dart';
 import 'package:voltshare_app/models/review_model.dart';
 
 /// Loads one page of reviews, newest first.
-typedef ReviewPageLoader = Future<List<ChargerReview>> Function({
+typedef ReviewPageLoader = Future<List<PublicReview>> Function({
   required int limit,
   required int offset,
 });
@@ -19,17 +19,17 @@ class ReviewsScreen extends StatefulWidget {
     required this.subtitle,
     required this.loadSummary,
     required this.loadPage,
-    this.summary = ChargerReviewSummary.empty,
+    this.summary = ReviewSummary.empty,
   });
 
   /// Shown under the "Reviews" title, e.g. the station name.
   final String subtitle;
 
-  final Future<ChargerReviewSummary> Function() loadSummary;
+  final Future<ReviewSummary> Function() loadSummary;
   final ReviewPageLoader loadPage;
 
   /// Shown in the header until the first refresh completes.
-  final ChargerReviewSummary summary;
+  final ReviewSummary summary;
 
   @override
   State<ReviewsScreen> createState() => _ReviewsScreenState();
@@ -44,8 +44,8 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
   static const Color _star = Color(0xFFF59E0B);
   static const int _pageSize = 20;
 
-  late ChargerReviewSummary _summary = widget.summary;
-  final List<ChargerReview> _reviews = [];
+  late ReviewSummary _summary = widget.summary;
+  final List<PublicReview> _reviews = [];
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _hasMore = true;
@@ -68,9 +68,9 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
         widget.loadPage(limit: _pageSize, offset: 0),
       ]);
       if (!mounted) return;
-      final page = results[1] as List<ChargerReview>;
+      final page = results[1] as List<PublicReview>;
       setState(() {
-        _summary = results[0] as ChargerReviewSummary;
+        _summary = results[0] as ReviewSummary;
         _reviews
           ..clear()
           ..addAll(page);

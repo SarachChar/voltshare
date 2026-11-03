@@ -38,7 +38,7 @@ class _FakeChargerService implements ChargerService {
       'status': status,
     });
     return Charger('new', name, chargerType, connectorType, powerKw,
-        pricePerKwh, status, 0, 0);
+        pricePerKwh, status);
   }
 
   @override
@@ -59,7 +59,7 @@ class _FakeChargerService implements ChargerService {
       'powerKw': powerKw,
     });
     return Charger(chargerId, name, 'DC', 'CCS2', 120, pricePerKwh,
-        'available', 0, 0);
+        'available');
   }
 
   @override
@@ -167,7 +167,7 @@ void main() {
     await pump(
       tester,
       initial:
-          Charger('c1', 'Charger 1', 'DC', 'CCS2', 120, 8.5, 'available', 0, 0),
+          Charger('c1', 'Charger 1', 'DC', 'CCS2', 120, 8.5, 'available'),
     );
 
     expect(find.byKey(const ValueKey('specs-locked')), findsOneWidget);
@@ -196,7 +196,7 @@ void main() {
     await pump(
       tester,
       initial:
-          Charger('c2', 'Charger 2', 'AC', 'Type 2', 7.4, 6.5, 'review', 0, 0),
+          Charger('c2', 'Charger 2', 'AC', 'Type 2', 7.4, 6.5, 'review'),
     );
 
     expect(find.byKey(const ValueKey('specs-locked')), findsNothing);

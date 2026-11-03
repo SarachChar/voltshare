@@ -3,7 +3,7 @@
 -- -----------------------------------------------------------------------------
 -- PURPOSE
 --   Promotional offers shown on a station, with an optional validity window.
---   Replaces charger_promotions (dropped in Task 9).
+--   Replaced the old charger-level charger_promotions table.
 --
 -- RELATIONSHIPS
 --   - station_id -> stations(id)  ON DELETE CASCADE

@@ -46,7 +46,7 @@ void main() {
     longitude: 100.5,
   );
   final charger =
-      Charger('c1', 'Charger 2', 'DC', 'CCS2', 120, 8.5, 'available', 0, 0);
+      Charger('c1', 'Charger 2', 'DC', 'CCS2', 120, 8.5, 'available');
 
   testWidgets('Reserve screen card shows station, charger and address',
       (tester) async {

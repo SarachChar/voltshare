@@ -3,8 +3,8 @@
 -- -----------------------------------------------------------------------------
 -- PURPOSE
 --   Photos of the businesses around a station (shared by all of the
---   station's businesses), ordered by display_order. Replaces business_images
---   (dropped in Task 9).
+--   station's businesses), ordered by display_order. Replaced the old
+--   charger-level business_images table.
 --
 -- RELATIONSHIPS
 --   - station_id -> stations(id)  ON DELETE CASCADE
