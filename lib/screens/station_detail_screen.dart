@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:voltshare_app/components/connector_icon.dart';
 import 'package:voltshare_app/components/map_navigation.dart';
 import 'package:voltshare_app/components/review_card.dart';
 import 'package:voltshare_app/controllers/review_controller.dart';
@@ -725,8 +726,9 @@ class _StationDetailScreenState extends State<StationDetailScreen>
                         : const Color(0xFFF1F2F4),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    Icons.bolt,
+                  alignment: Alignment.center,
+                  child: ConnectorIcon(
+                    connectorType: charger.connectorType,
                     color: isAvailable ? _primary : const Color(0xFF9CA3AF),
                   ),
                 ),

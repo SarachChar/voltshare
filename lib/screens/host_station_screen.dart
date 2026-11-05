@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:voltshare_app/components/connector_icon.dart';
 import 'package:voltshare_app/components/create_promotion_sheet.dart';
 import 'package:voltshare_app/controllers/charger_controller.dart';
 import 'package:voltshare_app/controllers/host_revenue_controller.dart';
@@ -606,8 +607,9 @@ class _HostStationScreenState extends State<HostStationScreen> {
                 : const Color(0xFFF1F2F4),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(
-            Icons.bolt,
+          alignment: Alignment.center,
+          child: ConnectorIcon(
+            connectorType: charger.connectorType,
             color: isAvailable ? _primary : const Color(0xFF9CA3AF),
           ),
         ),

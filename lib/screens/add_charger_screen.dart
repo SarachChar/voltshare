@@ -553,7 +553,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
           options: _connectorOptions,
           selected: _connectorType,
           onSelected: (value) => setState(() => _connectorType = value),
-          assetForOption: _connectorAsset,
+          assetForOption: Charger.connectorAssetFor,
         ),
         const Padding(padding: EdgeInsets.only(top: 20)),
         _fieldLabel('POWER OUTPUT'),
@@ -678,19 +678,6 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         ),
       ),
     );
-  }
-
-  static String? _connectorAsset(String connector) {
-    switch (connector) {
-      case 'Type 2':
-        return 'assets/images/type2.svg';
-      case 'CCS2':
-        return 'assets/images/css2.svg';
-      case 'CHAdeMO':
-        return 'assets/images/chademo.svg';
-      default:
-        return null;
-    }
   }
 
   // ----- Pricing step ---------------------------------------------------------

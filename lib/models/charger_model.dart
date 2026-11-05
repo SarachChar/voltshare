@@ -36,6 +36,20 @@ class Charger {
   static List<String> connectorsFor(String chargerType) =>
       connectorsByChargerType[chargerType] ?? const [];
 
+  /// SVG icon for a connector type, or null when there is no artwork for it.
+  static String? connectorAssetFor(String connector) {
+    switch (connector) {
+      case 'Type 2':
+        return 'assets/images/type2.svg';
+      case 'CCS2':
+        return 'assets/images/css2.svg';
+      case 'CHAdeMO':
+        return 'assets/images/chademo.svg';
+      default:
+        return null;
+    }
+  }
+
   Charger(
     this.id,
     this.name,
