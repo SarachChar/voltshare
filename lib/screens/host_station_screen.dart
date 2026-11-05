@@ -476,8 +476,8 @@ class _HostStationScreenState extends State<HostStationScreen> {
   }
 
   Widget _buildAddChargerButton() {
-    return SizedBox(
-      height: 56,
+    return ConstrainedBox(
+      constraints: BoxConstraints.tightFor(height: 56),
       child: ElevatedButton.icon(
         key: const ValueKey('add-charger'),
         onPressed: () => _openChargerForm(),
@@ -824,9 +824,8 @@ class _HostStationScreenState extends State<HostStationScreen> {
             child: InkWell(
               borderRadius: BorderRadius.circular(10),
               onTap: () => _deletePromotion(promo),
-              child: SizedBox(
-                width: 40,
-                height: 40,
+              child: ConstrainedBox(
+                constraints: BoxConstraints.tightFor(width: 40, height: 40),
                 child: Icon(Icons.close, size: 20, color: Colors.red.shade400),
               ),
             ),

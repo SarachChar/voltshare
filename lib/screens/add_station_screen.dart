@@ -543,9 +543,8 @@ class _AddStationScreenState extends State<AddStationScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(
-                width: 36,
-                height: 36,
+              ConstrainedBox(
+                constraints: BoxConstraints.tightFor(width: 36, height: 36),
                 child: CircularProgressIndicator(strokeWidth: 3, color: _primary),
               ),
               const Padding(padding: EdgeInsets.only(top: 16)),
@@ -884,9 +883,8 @@ class _AddStationScreenState extends State<AddStationScreen> {
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: _isSubmitting ? null : onTap,
-        child: SizedBox(
-          width: size,
-          height: size,
+        child: ConstrainedBox(
+          constraints: BoxConstraints.tightFor(width: size, height: size),
           child: Icon(Icons.close, size: 20, color: Colors.red.shade400),
         ),
       ),
@@ -1303,9 +1301,8 @@ class _AddStationScreenState extends State<AddStationScreen> {
     return Container(
       color: _bg,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: SizedBox(
-        height: 56,
-        width: double.infinity,
+      child: ConstrainedBox(
+        constraints: BoxConstraints.tightFor(height: 56, width: double.infinity),
         child: ElevatedButton(
           onPressed: (_isSubmitting || _isLoadingExisting) ? null : _onContinue,
           style: ElevatedButton.styleFrom(

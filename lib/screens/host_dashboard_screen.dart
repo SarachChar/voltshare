@@ -399,8 +399,8 @@ class _HostDashboardScreenState extends State<HostDashboardScreen>
   }
 
   Widget _buildAddStationButton() {
-    return SizedBox(
-      height: 64,
+    return ConstrainedBox(
+      constraints: BoxConstraints.tightFor(height: 64),
       child: ElevatedButton.icon(
         key: const ValueKey('add-station'),
         onPressed: _openAddStation,

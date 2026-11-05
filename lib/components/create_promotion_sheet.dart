@@ -242,8 +242,8 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
                   ),
                 ),
                 const Padding(padding: EdgeInsets.only(top: 24)),
-                SizedBox(
-                  height: 52,
+                ConstrainedBox(
+                  constraints: BoxConstraints.tightFor(height: 52),
                   child: ElevatedButton(
                     onPressed: _isSaving ? null : _submit,
                     style: ElevatedButton.styleFrom(
@@ -255,9 +255,8 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
                       ),
                     ),
                     child: _isSaving
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
+                        ? ConstrainedBox(
+                            constraints: BoxConstraints.tightFor(width: 22, height: 22),
                             child: CircularProgressIndicator(
                               strokeWidth: 2.5,
                               color: Colors.white,

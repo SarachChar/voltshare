@@ -299,8 +299,8 @@ class _StationDetailScreenState extends State<StationDetailScreen>
   // ----- Header ---------------------------------------------------------------
 
   Widget _buildImageHeader() {
-    return SizedBox(
-      height: _imageAreaHeight,
+    return ConstrainedBox(
+      constraints: BoxConstraints.tightFor(height: _imageAreaHeight),
       child: Stack(
         children: [
           Positioned.fill(child: _buildCarousel()),
@@ -770,8 +770,8 @@ class _StationDetailScreenState extends State<StationDetailScreen>
             _buildChargerHours(charger.id, week, expanded),
             const Padding(padding: EdgeInsets.only(top: 12)),
             if (isAvailable)
-              SizedBox(
-                height: 46,
+              ConstrainedBox(
+                constraints: BoxConstraints.tightFor(height: 46),
                 child: ElevatedButton(
                   key: ValueKey('book-${charger.id}'),
                   onPressed: () => _bookCharger(charger),
@@ -1379,8 +1379,8 @@ class _StationDetailScreenState extends State<StationDetailScreen>
     final station = widget.station;
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-      child: SizedBox(
-        height: 56,
+      child: ConstrainedBox(
+        constraints: BoxConstraints.tightFor(height: 56),
         child: OutlinedButton.icon(
           onPressed: () => showNavigationOptions(
             context,

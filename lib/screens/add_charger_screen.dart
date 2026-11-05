@@ -834,8 +834,8 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
         children: [
           Row(
             children: [
-              SizedBox(
-                width: 44,
+              ConstrainedBox(
+                constraints: BoxConstraints.tightFor(width: 44),
                 child: Text(
                   day.label,
                   style: const TextStyle(
@@ -927,8 +927,8 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
       context: context,
       builder: (context) {
         return SafeArea(
-          child: SizedBox(
-            height: 300,
+          child: ConstrainedBox(
+            constraints: BoxConstraints.tightFor(height: 300),
             child: Column(
               children: [
                 Row(
@@ -1021,9 +1021,8 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
     return Container(
       color: _bg,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: SizedBox(
-        height: 56,
-        width: double.infinity,
+      child: ConstrainedBox(
+        constraints: BoxConstraints.tightFor(height: 56, width: double.infinity),
         child: ElevatedButton(
           key: const ValueKey('charger-continue'),
           onPressed: (_isSubmitting || _isLoadingExisting) ? null : _onContinue,
@@ -1038,9 +1037,8 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
             ),
           ),
           child: _isSubmitting
-              ? const SizedBox(
-                  height: 22,
-                  width: 22,
+              ? ConstrainedBox(
+                  constraints: BoxConstraints.tightFor(height: 22, width: 22),
                   child: CircularProgressIndicator(
                     strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
