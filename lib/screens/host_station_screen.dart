@@ -529,7 +529,10 @@ class _HostStationScreenState extends State<HostStationScreen> {
           const Padding(padding: EdgeInsets.only(top: 12)),
           OutlinedButton.icon(
             key: ValueKey('edit-charger-${charger.id}'),
-            onPressed: () => _openChargerForm(charger: charger),
+            // Locked while the device is being set up, and once rejected.
+            onPressed: const {'setup', 'rejected'}.contains(charger.status)
+                ? null
+                : () => _openChargerForm(charger: charger),
             style: OutlinedButton.styleFrom(
               foregroundColor: _dark,
               side: const BorderSide(color: Color(0xFFE5E7EB)),
