@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voltshare_app/controllers/charging_session_controller.dart';
 import 'package:voltshare_app/controllers/reservation_controller.dart';
 import 'package:voltshare_app/controllers/review_controller.dart';
+import 'package:voltshare_app/models/host_revenue_model.dart'
+    show lastSixMonths, monthLabel;
 import 'package:voltshare_app/models/reservation_model.dart';
 import 'package:voltshare_app/screens/charging_session_screen.dart';
 import 'package:voltshare_app/screens/leave_review_screen.dart';
@@ -11,8 +13,11 @@ import 'package:voltshare_app/screens/plug_in_screen.dart';
 import 'package:voltshare_app/screens/session_detail_screen.dart';
 import 'package:voltshare_app/services/reservation_service.dart';
 
-/// "My Bookings" tab. Lists the signed-in driver's reservations with filter
-/// chips for All / Confirmed / Completed / Cancelled.
+/// "My Bookings" tab. Lists the signed-in driver's reservations for one month
+/// (dropdown: current month + 5 before, like the host Revenue tab) with
+/// filter chips for All / Confirmed / Completed / Cancelled. Only the picked
+/// month is queried; "This month" also includes upcoming bookings in later
+/// months so confirmed bookings booked ahead are never hidden.
 ///
 /// "Start" re-checks the booking (still confirmed, slot has begun) and then
 /// opens the plug-in prompt → charging session. Cancel (X) is wired up;
@@ -73,9 +78,15 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
   _BookingFilter _filter = _BookingFilter.confirmed;
 
+  final List<DateTime> _months = lastSixMonths();
+  late DateTime _selectedMonth = _months.first;
+
   List<Reservation> _reservations = List.empty();
   bool _isLoading = true;
   bool _hasError = false;
+
+  /// Ignores responses from an older request when the month changes quickly.
+  int _requestId = 0;
 
   /// Id of the booking whose "Start" check is in flight, so its button shows
   /// a spinner and repeated taps are ignored.
@@ -103,6 +114,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
   }
 
   Future<void> _load() async {
+    final id = ++_requestId;
     setState(() {
       _isLoading = true;
       _hasError = false;
@@ -117,20 +129,37 @@ class _BookingsScreenState extends State<BookingsScreen> {
       return;
     }
 
+    // Local month window. The current month has no upper bound so upcoming
+    // bookings in next month (bookable ahead) still show up.
+    final from = _selectedMonth;
+    final to = _selectedMonth == _months.first
+        ? null
+        : DateTime(from.year, from.month + 1);
+
     try {
-      final rows = await _controller.fetchReservationsByUser(userId);
-      if (!mounted) return;
+      final rows = await _controller.fetchReservationsByUser(
+        userId,
+        from: from,
+        to: to,
+      );
+      if (!mounted || id != _requestId) return;
       setState(() {
         _reservations = rows;
         _isLoading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || id != _requestId) return;
       setState(() {
         _hasError = true;
         _isLoading = false;
       });
     }
+  }
+
+  void _selectMonth(DateTime month) {
+    if (month == _selectedMonth) return;
+    setState(() => _selectedMonth = month);
+    _load();
   }
 
   /// The reservations matching the active filter. [_reservations] arrives
@@ -156,6 +185,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
           children: [
             _buildHeader(),
             _buildFilters(),
+            _buildMonthPicker(),
             Expanded(child: _buildBody()),
           ],
         ),
@@ -179,12 +209,63 @@ class _BookingsScreenState extends State<BookingsScreen> {
     );
   }
 
+  // --- Month picker ---------------------------------------------------------
+
+  Widget _buildMonthPicker() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _primary.withValues(alpha: 0.3)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<DateTime>(
+          value: _selectedMonth,
+          isExpanded: true,
+          borderRadius: BorderRadius.circular(14),
+          icon: const Icon(Icons.keyboard_arrow_down, color: _dark),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: _dark,
+          ),
+          items: [
+            for (final month in _months)
+              DropdownMenuItem(
+                value: month,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_month_outlined,
+                      size: 20,
+                      color: _primary,
+                    ),
+                    const Padding(padding: EdgeInsets.only(left: 10)),
+                    Text(
+                      month == _months.first
+                          ? '${monthLabel(month)} (This month)'
+                          : monthLabel(month),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          onChanged: (month) {
+            if (month != null) _selectMonth(month);
+          },
+        ),
+      ),
+    );
+  }
+
   // --- Filters --------------------------------------------------------------
 
   Widget _buildFilters() {
     return Container(
       height: 48,
-      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      margin: const EdgeInsets.only(top: 8, bottom: 12),
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -246,8 +327,9 @@ class _BookingsScreenState extends State<BookingsScreen> {
         _emptyState(
           icon: Icons.calendar_today_outlined,
           message: _reservations.isEmpty
-              ? 'No bookings yet.'
-              : 'No ${_filter.label.toLowerCase()} bookings.',
+              ? 'No bookings in ${monthLabel(_selectedMonth)}.'
+              : 'No ${_filter.label.toLowerCase()} bookings in '
+                    '${monthLabel(_selectedMonth)}.',
         ),
       );
     }

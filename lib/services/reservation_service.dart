@@ -24,7 +24,14 @@ abstract class ReservationService {
   });
 
   /// Returns the reservations made by [userId], most recent first.
-  Future<List<Reservation>> getReservationsByUser(String userId);
+  ///
+  /// Optional [from] (inclusive) and [to] (exclusive) bound `start_time` so
+  /// only one period is fetched; either may be null for an open end.
+  Future<List<Reservation>> getReservationsByUser(
+    String userId, {
+    DateTime? from,
+    DateTime? to,
+  });
 
   /// Fetches the latest copy of a single reservation by [id] (with the joined
   /// charger fields). Returns null when the row no longer exists.
@@ -102,20 +109,32 @@ class ReservationSupabaseService implements ReservationService {
   }
 
   @override
-  Future<List<Reservation>> getReservationsByUser(String userId) async {
+  Future<List<Reservation>> getReservationsByUser(
+    String userId, {
+    DateTime? from,
+    DateTime? to,
+  }) async {
     // Embed the related charger's display fields so the Bookings list can show
     // the charger name, address and power without a second query, plus the
     // driver's review (1-1) to pick "Review" vs "View Review", and the
     // charging session + bill for completed cards (actual times, cost).
-    final List<dynamic> data = await _client
+    var query = _client
         .from('reservations')
         .select(
           '*, ${Reservation.chargerJoin}, reviews(*), '
           'charging_sessions(started_at, ended_at, '
           'session_payments(energy_amount)), booking_fee(status)',
         )
-        .eq('user_id', userId)
-        .order('start_time', ascending: false);
+        .eq('user_id', userId);
+    if (from != null) {
+      query = query.gte('start_time', from.toUtc().toIso8601String());
+    }
+    if (to != null) {
+      query = query.lt('start_time', to.toUtc().toIso8601String());
+    }
+
+    final List<dynamic> data =
+        await query.order('start_time', ascending: false);
 
     return data
         .map((item) => Reservation.fromJson(item as Map<String, dynamic>))

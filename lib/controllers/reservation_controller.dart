@@ -38,9 +38,14 @@ class ReservationController {
     );
   }
 
-  /// Fetches the reservations made by a user, most recent first.
-  Future<List<Reservation>> fetchReservationsByUser(String userId) {
-    return service.getReservationsByUser(userId);
+  /// Fetches the reservations made by a user, most recent first, optionally
+  /// limited to `start_time` in [[from], [to]).
+  Future<List<Reservation>> fetchReservationsByUser(
+    String userId, {
+    DateTime? from,
+    DateTime? to,
+  }) {
+    return service.getReservationsByUser(userId, from: from, to: to);
   }
 
   /// Re-fetches a single reservation so callers can check its current status
