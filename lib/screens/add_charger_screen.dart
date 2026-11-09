@@ -556,7 +556,8 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
           assetForOption: Charger.connectorAssetFor,
         ),
         const Padding(padding: EdgeInsets.only(top: 20)),
-        _fieldLabel('POWER OUTPUT'),
+        // Not editable (so not required) once the charger is live.
+        _fieldLabel('POWER OUTPUT', required: !_specsLocked),
         const Padding(padding: EdgeInsets.only(top: 8)),
         TextField(
           key: const ValueKey('charger-power'),
@@ -714,7 +715,7 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
           ),
         ),
         const Padding(padding: EdgeInsets.only(top: 20)),
-        _fieldLabel('PRICE PER KWH (฿)'),
+        _fieldLabel('PRICE PER KWH (฿)', required: true),
         const Padding(padding: EdgeInsets.only(top: 8)),
         TextField(
           key: const ValueKey('charger-price'),
@@ -979,9 +980,19 @@ class _AddChargerScreenState extends State<AddChargerScreen> {
 
   // ----- Shared bits ----------------------------------------------------------
 
-  Widget _fieldLabel(String label) {
-    return Text(
-      label,
+  /// Section label. [required] appends a red asterisk.
+  Widget _fieldLabel(String label, {bool required = false}) {
+    return Text.rich(
+      TextSpan(
+        text: label,
+        children: [
+          if (required)
+            const TextSpan(
+              text: ' *',
+              style: TextStyle(color: Color(0xFFEF4444)),
+            ),
+        ],
+      ),
       style: const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w800,

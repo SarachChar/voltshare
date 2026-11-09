@@ -661,7 +661,7 @@ class _AddStationScreenState extends State<AddStationScreen> {
           icon: Icons.photo_camera_outlined,
         ),
         const Padding(padding: EdgeInsets.only(top: 20)),
-        _fieldLabel('STATION NAME'),
+        _fieldLabel('STATION NAME', required: true),
         const Padding(padding: EdgeInsets.only(top: 8)),
         TextField(
           key: const ValueKey('station-name'),
@@ -676,7 +676,7 @@ class _AddStationScreenState extends State<AddStationScreen> {
           decoration: _inputDecoration('Street address'),
         ),
         const Padding(padding: EdgeInsets.only(top: 20)),
-        _fieldLabel('PIN LOCATION'),
+        _fieldLabel('PIN LOCATION', required: true),
         const Padding(padding: EdgeInsets.only(top: 8)),
         _buildPinLocationSection(),
         const Padding(padding: EdgeInsets.only(top: 20)),
@@ -1159,6 +1159,8 @@ class _AddStationScreenState extends State<AddStationScreen> {
             ],
           ),
           const Padding(padding: EdgeInsets.only(top: 14)),
+          _fieldLabel('BUSINESS NAME', required: true),
+          const Padding(padding: EdgeInsets.only(top: 8)),
           TextField(
             controller: _businessNameController,
             textInputAction: TextInputAction.next,
@@ -1263,9 +1265,19 @@ class _AddStationScreenState extends State<AddStationScreen> {
 
   // ----- Shared bits ----------------------------------------------------------
 
-  Widget _fieldLabel(String label) {
-    return Text(
-      label,
+  /// Section label. [required] appends a red asterisk.
+  Widget _fieldLabel(String label, {bool required = false}) {
+    return Text.rich(
+      TextSpan(
+        text: label,
+        children: [
+          if (required)
+            const TextSpan(
+              text: ' *',
+              style: TextStyle(color: Color(0xFFEF4444)),
+            ),
+        ],
+      ),
       style: const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w800,
