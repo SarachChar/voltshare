@@ -52,13 +52,23 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
   }
 
   Future<void> _pickDate({required bool isFrom}) async {
+    FocusScope.of(context).unfocus();
     final now = DateTime.now();
-    final initial =
-        isFrom ? (_validFrom ?? now) : (_validUntil ?? _validFrom ?? now);
+    final today = DateTime(now.year, now.month, now.day);
+    // Only today onwards is selectable. "Valid until" also can't be before
+    // the chosen "valid from" date.
+    final first = isFrom
+        ? today
+        : (_validFrom != null && _validFrom!.isAfter(today)
+            ? _validFrom!
+            : today);
+    var initial =
+        isFrom ? (_validFrom ?? today) : (_validUntil ?? _validFrom ?? today);
+    if (initial.isBefore(first)) initial = first;
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime(now.year - 1),
+      firstDate: first,
       lastDate: DateTime(now.year + 5),
     );
     if (picked == null) return;
@@ -74,17 +84,29 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
     });
   }
 
+  /// Inline error for a date field, or null when valid. Only shown after the
+  /// user has tried to submit.
+  String? _dateError({required bool isFrom}) {
+    if (!_showDateErrors) return null;
+    final value = isFrom ? _validFrom : _validUntil;
+    if (value == null) return 'Required';
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (value.isBefore(today)) return 'Must be today or later';
+    if (!isFrom && _validFrom != null && value.isBefore(_validFrom!)) {
+      return 'Must be on or after valid from';
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
     final formValid = _formKey.currentState!.validate();
     setState(() => _showDateErrors = true);
-    if (!formValid) return;
-    if (_validFrom == null || _validUntil == null) return;
-    if (_validUntil!.isBefore(_validFrom!)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Valid until must be after valid from.')),
-      );
-      return;
-    }
+    final datesValid =
+        _dateError(isFrom: true) == null && _dateError(isFrom: false) == null;
+    if (!formValid || !datesValid) return;
 
     setState(() => _isSaving = true);
     try {
@@ -117,7 +139,11 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
-    return Padding(
+    // Tapping anywhere outside a text field dismisses the keyboard.
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
         decoration: const BoxDecoration(
@@ -189,6 +215,7 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
                         value: _validFrom,
                         onTap: () => _pickDate(isFrom: true),
                         required: true,
+                        error: _dateError(isFrom: true),
                       ),
                     ),
                     const Padding(padding: EdgeInsets.only(left: 12)),
@@ -198,6 +225,7 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
                         value: _validUntil,
                         onTap: () => _pickDate(isFrom: false),
                         required: true,
+                        error: _dateError(isFrom: false),
                       ),
                     ),
                   ],
@@ -276,6 +304,7 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -320,8 +349,9 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
     required DateTime? value,
     required VoidCallback onTap,
     bool required = false,
+    String? error,
   }) {
-    final hasError = required && _showDateErrors && value == null;
+    final hasError = error != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -365,7 +395,7 @@ class _CreatePromotionSheetState extends State<CreatePromotionSheet> {
         if (hasError) ...[
           const Padding(padding: EdgeInsets.only(top: 6)),
           Text(
-            'Required',
+            error,
             style: TextStyle(fontSize: 12, color: Colors.red.shade700),
           ),
         ],
